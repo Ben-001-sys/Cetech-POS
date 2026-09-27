@@ -298,7 +298,7 @@ export interface UpdateReadyDialogProps {
   readonly onApply: () => void;
 }
 
-export function UpdateReadyDialog({ open, safety, currentBuild, nextBuild, onLater, onApply }: UpdateReadyDialogProps) {
+export function UpdateReadyDialog({ open, safety, currentBuild: _currentBuild, nextBuild, onLater, onApply }: UpdateReadyDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -330,7 +330,7 @@ export function UpdateReadyDialog({ open, safety, currentBuild, nextBuild, onLat
           {safety === "blocked_critical" ? <div className="banner danger" role="alert"><strong>Update blocked by active transaction.</strong><span>The new version must wait until payment or recovery reaches a safe point.</span></div> : null}
           {safety === "defer" ? <div className="banner warning" role="status"><strong>Update deferred.</strong><span>Finish or safely clear the current work before applying the update.</span></div> : null}
           {safety === "safe" ? <div className="banner success" role="status"><strong>Safe to update.</strong><span>No critical transaction state is reported by the update coordinator.</span></div> : null}
-          <dl className="operational-detail-list"><div><dt>Current build</dt><dd>{currentBuild}</dd></div>{nextBuild ? <div><dt>Update</dt><dd>New version ready</dd></div> : null}<div><dt>Saved cart and pending work</dt><dd>Kept</dd></div><div><dt>Product list</dt><dd>Can be refreshed</dd></div></dl>
+          <dl className="operational-detail-list">{nextBuild ? <div><dt>Update</dt><dd>New version ready</dd></div> : null}<div><dt>Saved cart and pending work</dt><dd>Kept</dd></div><div><dt>Product list</dt><dd>Can be refreshed</dd></div></dl>
         </div>
         <div className="operational-dialog-actions"><button className="btn" type="button" onClick={onLater}>Update later</button><button className="btn primary" type="button" disabled={!safe} onClick={onApply}>Update now</button></div>
       </section>
