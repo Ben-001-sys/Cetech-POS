@@ -80,12 +80,13 @@ describe("operational recovery surfaces", () => {
   test("Update Ready blocks activation when critical work exists and allows a safe state", () => {
     const blocked = renderToStaticMarkup(<UpdateReadyDialog open safety="blocked_critical" currentBuild="r8" onLater={() => undefined} onApply={() => undefined} />);
     expect(blocked).toContain("Update blocked by active transaction.");
-    expect(blocked).toContain("Current build");
-    expect(blocked).toContain("r8");
+    expect(blocked).not.toContain("Current build");
+    expect(blocked).not.toContain("r8");
     expect(blocked).toContain("disabled");
     const safe = renderToStaticMarkup(<UpdateReadyDialog open safety="safe" currentBuild="r8" nextBuild="r8.1" onLater={() => undefined} onApply={() => undefined} />);
     expect(safe).toContain("Safe to update.");
-    expect(safe).toContain("Current build");
+    expect(safe).not.toContain("Current build");
+    expect(safe).not.toContain("r8");
     expect(safe).toContain("New version ready");
     expect(safe).not.toContain("r8.1");
   });
