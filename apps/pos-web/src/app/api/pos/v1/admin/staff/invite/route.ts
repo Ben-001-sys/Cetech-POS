@@ -8,7 +8,7 @@ import { composeControlPlaneDirectory } from "@/server/admin/compose-control-pla
 import { composeStaffIdentityAdminStore } from "@/server/admin/compose-staff-identity-admin-store";
 import { composeStaffAccessStatusAdminStore } from "@/server/admin/compose-staff-access-status-admin-store";
 import { composeAdminAuditStore } from "@/server/admin/compose-admin-audit-store";
-import { handleInviteStaff } from "@/server/admin/handle-invite-staff";
+import { handleInviteStaff, readStaffInviteBody } from "@/server/admin/handle-invite-staff";
 import { createServerRestFetch } from "@/server/http/server-fetch";
 import { resolveCorrelationId } from "@/server/http/correlation";
 import { httpStatusFor } from "@/server/http/status";
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlation = resolveCorrelationId(request.headers.get("x-correlation-id") ?? undefined);
   try {
     const body = await request.json() as unknown;
-    const parsed = parseBody(body);
+    const parsed = readStaffInviteBody(body);
     if (!parsed) {
       const result = {
         ok: false as const,
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       audit: composeAdminAuditStore(process.env),
       email: parsed.email,
       displayName: parsed.displayName,
+      runtimeEnv: process.env,
       protection: {
         origin: request.headers.get("origin"),
         referer: request.headers.get("referer"),
@@ -78,12 +79,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-function parseBody(value: unknown): {
-  readonly email: string;
-  readonly displayName: string;
-} | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const root = value as Record<string, unknown>;
-  if (typeof root.email !== "string" || typeof root.displayName !== "string") return null;
-  return { email: root.email, displayName: root.displayName };
-}

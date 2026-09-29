@@ -1,4 +1,5 @@
 import { readSupabaseInfrastructureEnv } from "../../config/env";
+import { isDeployedInvitationEnvironment } from "./invitation-redirect";
 import { createServerRestFetch } from "../http/server-fetch";
 import {
   createMemoryStaffIdentityAdminStore,
@@ -16,6 +17,7 @@ export function composeStaffIdentityAdminStore(
       url: infrastructure.url,
       serviceRoleKey: infrastructure.serviceRoleKey,
       fetchImpl: createServerRestFetch(),
+      allowLocalhostInvitationRedirect: !isDeployedInvitationEnvironment(env),
     });
   }
   if (appEnv === "staging" || appEnv === "production") {

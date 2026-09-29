@@ -1,3 +1,4 @@
+import { isCanonicalInvitationRedirect } from "./invitation-redirect";
 import type { PosRestFetch } from "../http/server-fetch";
 
 export type InvitedStaffIdentity = {
@@ -14,6 +15,8 @@ export interface StaffIdentityAdminStore {
     readonly email: string;
     readonly displayName: string;
     readonly actorId?: string;
+    /** Server-resolved `{origin}/auth/invite`. Never taken from the request body. */
+    readonly redirectTo?: string;
   }): Promise<InvitedStaffIdentity | "conflict" | "unavailable">;
   createWithTemporaryPassword(input: {
     readonly organizationId: string;
@@ -39,11 +42,15 @@ export interface StaffIdentityAdminStore {
 
 export function createMemoryStaffIdentityAdminStore(): StaffIdentityAdminStore & {
   readonly rows: InvitedStaffIdentity[];
+  readonly inviteCalls: Array<{ readonly email: string; readonly redirectTo: string | null }>;
 } {
   const rows: InvitedStaffIdentity[] = [];
+  const inviteCalls: Array<{ readonly email: string; readonly redirectTo: string | null }> = [];
   return {
     rows,
+    inviteCalls,
     async invite(input) {
+      inviteCalls.push({ email: input.email, redirectTo: input.redirectTo ?? null });
       if (rows.some((row) => row.email.toLowerCase() === input.email.toLowerCase())) {
         return "conflict";
       }
@@ -94,6 +101,8 @@ export function createSupabaseStaffIdentityAdminStore(input: {
   readonly serviceRoleKey: string;
   readonly fetchImpl: PosRestFetch;
   readonly timeoutMs?: number;
+  /** Local development may invite to localhost. Deployed environments must not. */
+  readonly allowLocalhostInvitationRedirect?: boolean;
 }): StaffIdentityAdminStore {
   const base = input.url.replace(/\/+$/, "");
   const timeoutMs = input.timeoutMs ?? 8_000;
@@ -135,10 +144,12 @@ export function createSupabaseStaffIdentityAdminStore(input: {
 
   return {
     async invite(value) {
-      // CAN-07 redirect belongs here: pass server-owned redirect_to for
-      // /auth/invite. Do not add a second invite client.
+      const allowLocalhost = input.allowLocalhostInvitationRedirect === true;
+      if (!isCanonicalInvitationRedirect(value.redirectTo, { allowLocalhost })) {
+        return "unavailable";
+      }
       const invited = await request(
-        `${base}/auth/v1/invite`,
+        `${base}/auth/v1/invite?redirect_to=${encodeURIComponent(value.redirectTo)}`,
         "POST",
         {
           email: value.email,

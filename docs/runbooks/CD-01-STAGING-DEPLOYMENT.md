@@ -153,7 +153,9 @@ BRIDGE_APPLICATION_PASSWORD=<server-only staging application password>
 PAYMENT_PROVIDER=disabled
 ```
 
-During the generated-URL phase, **do not set `APP_ORIGIN` or `ALLOWED_ORIGINS` merely to a guessed Vercel URL**. The application will use the exact runtime `VERCEL_URL`. If a stable custom domain is added later, set `APP_ORIGIN=https://<hostname>` and optionally add other explicitly trusted origins through `ALLOWED_ORIGINS`.
+During the generated-URL phase, **do not set `APP_ORIGIN` or `ALLOWED_ORIGINS` merely to a guessed Vercel URL**. The application will use the exact runtime `VERCEL_URL` for ordinary origin checks. If a stable custom domain is added later, set `APP_ORIGIN=https://<hostname>` and optionally add other explicitly trusted origins through `ALLOWED_ORIGINS`.
+
+Staff invitation emails are stricter. They require that explicit `APP_ORIGIN` and do not fall back to `VERCEL_URL`. Until a stable https origin is configured, invitation send fails before delivery. Hosted Supabase Site URL, redirect allow-list, SMTP, and the invitation template are dashboard settings, not application code. See [CAN-07 staff invitation configuration](CAN-07-STAFF-INVITATION.md).
 
 Do not configure a live Paystack key for CD-01. R7 retains its own sandbox/runtime acceptance gate. If a later milestone authorizes sandbox payment testing, that is a separate explicit change to the staging environment and must not silently become production authority.
 

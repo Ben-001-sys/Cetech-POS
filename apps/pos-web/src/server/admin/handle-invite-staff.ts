@@ -7,9 +7,27 @@ import type { StaffAssignmentDirectory } from "../auth/assignments";
 import type { StaffSessionStore } from "../auth/session-store";
 import type { ControlPlaneDirectory } from "./control-plane-directory";
 import { loadManagementAuthority } from "./management-authority";
+import {
+  invitationRedirectFailureMessage,
+  resolveStaffInvitationRedirect,
+} from "./invitation-redirect";
 import type { StaffIdentityAdminStore } from "./staff-identity-admin-store";
 import type { StaffAccessStatusAdminStore } from "./staff-access-status-admin-store";
 import type { AdminAuditStore } from "./admin-audit-store";
+
+/**
+ * Invitation body is email and display name only.
+ * `redirectTo`, `redirect_to`, and any other field cannot choose the link destination.
+ */
+export function readStaffInviteBody(value: unknown): {
+  readonly email: string;
+  readonly displayName: string;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const root = value as Record<string, unknown>;
+  if (typeof root.email !== "string" || typeof root.displayName !== "string") return null;
+  return { email: root.email, displayName: root.displayName };
+}
 
 export type StaffInviteResult = {
   readonly actorId: string;
@@ -31,6 +49,8 @@ export async function handleInviteStaff(input: {
   readonly email: string;
   readonly displayName: string;
   readonly protection: MutationProtectionInput;
+  /** Process environment. Request fields cannot select the invitation redirect. */
+  readonly runtimeEnv?: Readonly<Record<string, string | undefined>>;
 }): Promise<ApiResult<StaffInviteResult>> {
   const protection = assertMutationProtection(input.protection);
   if (!protection.ok) {
@@ -62,15 +82,25 @@ export async function handleInviteStaff(input: {
     return authFailure("VALIDATION_ERROR", "staff display name is invalid", input.correlationId);
   }
 
+  const redirect = resolveStaffInvitationRedirect(input.runtimeEnv ?? {});
+  if (!redirect.ok) {
+    return authFailure(
+      "VALIDATION_ERROR",
+      invitationRedirectFailureMessage(redirect.reason),
+      input.correlationId,
+    );
+  }
+
   const invited = await input.identities.invite({
     organizationId: authority.data.organizationId,
     email,
     displayName,
+    redirectTo: redirect.redirectTo,
   });
   if (invited === "conflict") {
     return apiFailure(
       "VALIDATION_ERROR",
-      "this email is already invited or in use",
+      "This email already has an account.",
       input.correlationId,
     );
   }
