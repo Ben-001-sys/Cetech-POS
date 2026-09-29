@@ -252,7 +252,7 @@ otp_expiry = 3600
 # Supabase dashboard. See docs/runbooks/CAN-07-STAFF-INVITATION.md.
 [auth.email.template.invite]
 subject = "You are invited to CETECH POS"
-content_path = "./templates/invite.html"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
