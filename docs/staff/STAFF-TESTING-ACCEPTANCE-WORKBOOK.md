@@ -583,7 +583,8 @@ Only run these tests when the payment method is available in the test POS.
 **Expected:**
 - browser print preview shows the actual receipt;
 - preview is not blank;
-- preview is receipt/thermal width, not the full POS screen.
+- preview is an 80mm-wide page, not A4 or Letter and not the full POS screen;
+- the printer itself must be set to an 80mm roll. The page does not grow with the receipt.
 
 ### Your result
 
@@ -1227,7 +1228,7 @@ Test selling, modal dialogs, Orders, Returns, Register, and Management where aut
 
 ## T144 — Printer
 
-**Expected:** receipt appears in print preview and prints in an appropriate receipt layout.
+**Expected:** receipt appears in print preview as an 80mm-wide page, not A4 or Letter, and prints when the printer is set to an 80mm roll.
 
 ### Your result
 
