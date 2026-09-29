@@ -40,6 +40,9 @@ export function createSupabaseAuthIntrospector(options: SupabaseAuthIntrospector
         if (response.status === 401 || response.status === 403) {
           return expiredOrRevoked(accessToken, now);
         }
+        if (response.status === 400 || response.status === 422) {
+          return { status: "rejected" };
+        }
         if (!response.ok) {
           return { status: response.status >= 500 ? "unavailable" : "malformed" };
         }
@@ -52,6 +55,9 @@ export function createSupabaseAuthIntrospector(options: SupabaseAuthIntrospector
       } catch (error) {
         if (isTimeout(error)) {
           return { status: "timeout" };
+        }
+        if (error instanceof TypeError) {
+          return { status: "transport" };
         }
         return { status: "unavailable" };
       }

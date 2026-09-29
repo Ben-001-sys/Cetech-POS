@@ -16,6 +16,7 @@ import { STAFF_CSRF_HEADER } from "../../../../../config/auth";
 import { authFailure } from "../../../../../server/auth/errors";
 import { resolveCorrelationId } from "../../../../../server/http/correlation";
 import { httpStatusFor } from "../../../../../server/http/status";
+import { acceptStaffSignInReport, recordStaffSignInDiagnostic, runtimeNotConfiguredDiagnostic } from "../../../../../core/identity/sign-in-diagnostic";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const store = tryComposeStore();
@@ -37,6 +38,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  if (request.headers.get("x-cetech-sign-in-report") === "1" && !request.headers.get("authorization")) {
+    return reportSignInFailure(request);
+  }
   const store = tryComposeStore();
   const verifier = tryComposeVerifier();
   const accessControl = tryComposeAccessControl();
@@ -122,6 +126,7 @@ function tryComposeAssignments() {
 
 function unavailable(request: NextRequest): NextResponse {
   const correlation = resolveCorrelationId(request.headers.get("x-correlation-id") ?? undefined);
+  recordStaffSignInDiagnostic(runtimeNotConfiguredDiagnostic(correlation.correlationId));
   const body = authFailure(
     "INTEGRATION_UNAVAILABLE",
     "staff session runtime is not configured",
@@ -147,4 +152,32 @@ function withCookies(result: {
     response.headers.append("Set-Cookie", cookie);
   }
   return response;
+}
+
+async function reportSignInFailure(request: NextRequest): Promise<NextResponse> {
+  const correlation = resolveCorrelationId(request.headers.get("x-correlation-id") ?? undefined);
+  const origin = request.headers.get("origin");
+  if (!origin || !staffAllowedOrigins().includes(origin)) {
+    return NextResponse.json(
+      { ok: false, correlationId: correlation.correlationId },
+      { status: 403, headers: { "Cache-Control": "no-store", "X-Correlation-ID": correlation.correlationId } },
+    );
+  }
+  let body: unknown = null;
+  try {
+    body = await request.json();
+  } catch {
+    body = null;
+  }
+  const diagnostic = correlation.ok ? acceptStaffSignInReport(body, correlation.correlationId) : null;
+  if (diagnostic) {
+    recordStaffSignInDiagnostic(diagnostic);
+  }
+  return NextResponse.json(
+    { ok: true, data: { recorded: Boolean(diagnostic) }, correlationId: correlation.correlationId },
+    {
+      status: diagnostic ? 200 : 400,
+      headers: { "Cache-Control": "no-store", "X-Correlation-ID": correlation.correlationId },
+    },
+  );
 }

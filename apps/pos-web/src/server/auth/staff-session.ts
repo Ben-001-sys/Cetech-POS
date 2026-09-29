@@ -13,6 +13,11 @@ import { authFailure } from "./errors";
 import type { StaffIdentityVerifier } from "./identity-verifier";
 import type { StaffAccessControl } from "./staff-access-control";
 import type { StaffSessionStore } from "./session-store";
+import {
+  diagnosticFromVerifier,
+  recordStaffSignInDiagnostic,
+  sessionStoreDiagnostic,
+} from "../../core/identity/sign-in-diagnostic";
 
 export type EstablishStaffSessionInput = {
   readonly accessToken?: string;
@@ -46,7 +51,12 @@ export async function establishStaffSession(
     now: input.now,
   });
   if (!verifyResult.ok) {
-    if (verifyResult.reason === "timeout" || verifyResult.reason === "unavailable") {
+    const diagnostic = diagnosticFromVerifier({
+      correlationId: input.correlationId,
+      reason: verifyResult.reason,
+    });
+    if (diagnostic) recordStaffSignInDiagnostic(diagnostic);
+    if (verifyResult.reason === "timeout" || verifyResult.reason === "unavailable" || verifyResult.reason === "transport") {
       return authFailure("INTEGRATION_UNAVAILABLE", "identity provider is unavailable", input.correlationId);
     }
     if (verifyResult.reason === "access_disabled") {
@@ -82,10 +92,21 @@ export async function establishStaffSession(
   const session = toSession(verifyResult.identity);
   const csrfToken = crypto.randomUUID();
   const expiresAt = new Date(Date.parse(session.expiresAt));
-  const sessionId = await input.store.create(session, csrfToken, expiresAt, {
-    mustChangePassword: verifyResult.identity.mustChangePassword === true,
-    authUserId: verifyResult.identity.authUserId ?? null,
-  });
+  let sessionId: string;
+  try {
+    sessionId = await input.store.create(session, csrfToken, expiresAt, {
+      mustChangePassword: verifyResult.identity.mustChangePassword === true,
+      authUserId: verifyResult.identity.authUserId ?? null,
+    });
+  } catch {
+    recordStaffSignInDiagnostic(sessionStoreDiagnostic(input.correlationId));
+    return authFailure(
+      "INTEGRATION_UNAVAILABLE",
+      "staff session store is unavailable",
+      input.correlationId,
+      { field: "session_store" },
+    );
+  }
   const secure = input.secureCookies ?? true;
   return {
     ok: true,

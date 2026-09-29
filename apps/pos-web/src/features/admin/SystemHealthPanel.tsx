@@ -1,6 +1,7 @@
 "use client";
 
 import type { ManagementSystemHealthView } from "../../server/admin/management-system-health";
+import type { StaffSignInDiagnosticReason } from "../../core/identity/sign-in-diagnostic";
 import { formatOperationalDateTime } from "../../ui/cashier-language";
 
 const STATUS_LABEL = {
@@ -83,7 +84,46 @@ export function SystemHealthPanel({
         <summary>Reference</summary>
         <p className="muted">Build {view.buildId}</p>
       </details>
+      <SignInDiagnostics rows={view.signInDiagnostics ?? []} />
     </div>
+  );
+}
+
+const SIGN_IN_REASON_COPY: Record<StaffSignInDiagnosticReason, string> = {
+  provider_timeout: "The sign-in service timed out.",
+  provider_unavailable: "The sign-in service did not respond.",
+  provider_rejected: "The sign-in service rejected the attempt.",
+  verifier_malformed: "The sign-in response could not be read.",
+  session_store_unavailable: "The sign-in could not be saved.",
+  runtime_not_configured: "Sign-in is not configured on this server.",
+  transport_failed: "The sign-in request did not reach the service.",
+};
+
+function SignInDiagnostics({
+  rows,
+}: {
+  readonly rows: NonNullable<ManagementSystemHealthView["signInDiagnostics"]>;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="card card-pad stack" data-sign-in-diagnostics="">
+      <h2>Recent sign-in checks</h2>
+      <ul className="stack">
+        {rows.map((row) => (
+          <li key={`${row.correlationId}-${row.reason}`} data-sign-in-reason={row.reason}>
+            <p>{SIGN_IN_REASON_COPY[row.reason]}</p>
+            <p className="muted">Reference {row.correlationId}</p>
+            <p className="muted">
+              {row.reason}
+              {" · "}
+              {row.httpStatusClass}
+              {" · "}
+              {row.sessionStoreReached ? "Session save was reached" : "Session save was not reached"}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

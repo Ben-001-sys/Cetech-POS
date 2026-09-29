@@ -1,4 +1,6 @@
 import { readPublicStaffAuthEnv } from "../../config/env";
+import { classifyPasswordGrantDiagnostic } from "./sign-in-diagnostic";
+import { reportStaffSignInDiagnostic } from "./report-sign-in-diagnostic";
 
 export type StaffSignInRequest = {
   readonly email?: string;
@@ -52,6 +54,7 @@ export function createPublicSupabaseStaffAuthProvider(
     async signIn(request) {
       const env = readPublicStaffAuthEnv(options.env);
       if (!env) {
+        reportGrant({ configured: false });
         throw new StaffAuthError("provider_unavailable", "identity provider is not configured");
       }
       if (options.isOnline && !options.isOnline()) {
@@ -74,12 +77,24 @@ export function createPublicSupabaseStaffAuthProvider(
           },
           body: JSON.stringify({ email, password }),
         });
-      } catch {
+      } catch (error) {
+        const timeout = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+        reportGrant({
+          configured: true,
+          timeout,
+          transport: !timeout,
+        });
         throw new StaffAuthError("provider_unavailable", "identity provider is unavailable");
       }
       if (!response.ok) {
         const body = await readJson(response);
         const kind = classifySupabasePasswordGrantFailure(response.status, body);
+        reportGrant({
+          configured: true,
+          httpStatus: response.status,
+          credentialRejection: kind === "invalid_credentials",
+          accessDisabled: kind === "access_disabled",
+        });
         throw new StaffAuthError(
           kind,
           kind === "invalid_credentials"
@@ -91,6 +106,7 @@ export function createPublicSupabaseStaffAuthProvider(
       }
       const payload = (await response.json()) as { access_token?: unknown };
       if (typeof payload.access_token !== "string" || payload.access_token.length < 1) {
+        reportGrant({ configured: true, httpStatus: response.status, missingAccessToken: true });
         throw new StaffAuthError("provider_unavailable", "identity provider did not return an access token");
       }
       if (payload.access_token.toUpperCase().includes("SERVICE_ROLE")) {
@@ -112,6 +128,16 @@ export class StaffAuthError extends Error {
     this.name = "StaffAuthError";
     this.kind = kind;
   }
+}
+
+function reportGrant(input: Parameters<typeof classifyPasswordGrantDiagnostic>[0]): void {
+  const reason = classifyPasswordGrantDiagnostic(input);
+  if (!reason) return;
+  reportStaffSignInDiagnostic({
+    reason,
+    category: "identity_provider",
+    ...(typeof input.httpStatus === "number" ? { httpStatus: input.httpStatus } : {}),
+  });
 }
 
 function readSupabaseErrorCode(body: unknown): string | null {

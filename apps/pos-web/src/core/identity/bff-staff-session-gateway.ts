@@ -2,6 +2,7 @@ import type { ApiResult } from "../../../../../docs/contracts/ports";
 import type { Session } from "../../../../../docs/contracts/domain.generated";
 import { STAFF_CSRF_COOKIE, STAFF_CSRF_HEADER } from "../../config/auth";
 import type { StaffSessionGateway } from "./staff-identity-port";
+import { reportStaffSignInDiagnostic } from "./report-sign-in-diagnostic";
 import {
   parseStaffSessionContext,
   type StaffSessionContext,
@@ -101,6 +102,7 @@ export function createBffStaffSessionGateway(
       }
       return { ok: true, data: parsed, correlationId: body.correlationId };
     } catch {
+      reportStaffSignInDiagnostic({ reason: "transport_failed", category: "bff_session" });
       return unavailable(correlation, "staff session transport failed");
     }
   }

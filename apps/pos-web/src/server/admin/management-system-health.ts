@@ -1,4 +1,5 @@
 import type { HealthCheck, StoreHealth } from "../../../../../docs/contracts/domain.generated";
+import type { StaffSignInDiagnostic } from "../../core/identity/sign-in-diagnostic";
 
 export type ManagementHealthStatus = HealthCheck["status"];
 
@@ -15,6 +16,7 @@ export type ManagementSystemHealthView = {
   readonly overall: ManagementHealthStatus;
   readonly buildId: string;
   readonly checks: readonly ManagementSystemHealthCheck[];
+  readonly signInDiagnostics?: readonly StaffSignInDiagnostic[];
 };
 
 const STATUS_RANK: Record<ManagementHealthStatus, number> = {

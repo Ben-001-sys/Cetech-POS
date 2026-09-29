@@ -9,6 +9,7 @@ import {
   presentManagementSystemHealth,
   type ManagementSystemHealthView,
 } from "./management-system-health";
+import { recentStaffSignInDiagnostics } from "../../core/identity/sign-in-diagnostic";
 
 export type { ManagementSystemHealthView };
 
@@ -47,7 +48,10 @@ export async function handleGetManagementSystemHealth(input: {
 
   return {
     ok: true,
-    data: presentManagementSystemHealth(health),
+    data: {
+      ...presentManagementSystemHealth(health),
+      signInDiagnostics: recentStaffSignInDiagnostics(),
+    },
     correlationId: input.correlationId,
   };
 }

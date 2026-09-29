@@ -214,7 +214,10 @@ function identityFailure(
       return authFailure("AUTH_REQUIRED", "identity claims are malformed", correlationId);
     case "timeout":
     case "unavailable":
+    case "transport":
       return authFailure("INTEGRATION_UNAVAILABLE", "identity provider is unavailable", correlationId);
+    case "rejected":
+      return authFailure("AUTH_REQUIRED", "staff session could not be established", correlationId);
   }
 }
 

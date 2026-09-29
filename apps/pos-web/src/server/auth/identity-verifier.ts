@@ -7,7 +7,9 @@ export type IdentityVerifyFailureReason =
   | "malformed"
   | "access_disabled"
   | "timeout"
-  | "unavailable";
+  | "unavailable"
+  | "transport"
+  | "rejected";
 
 export type IdentityVerifyResult =
   | { readonly ok: true; readonly identity: StaffIdentityClaims }
@@ -19,7 +21,9 @@ export type TokenIntrospection =
   | { readonly status: "revoked" }
   | { readonly status: "malformed" }
   | { readonly status: "timeout" }
-  | { readonly status: "unavailable" };
+  | { readonly status: "unavailable" }
+  | { readonly status: "transport" }
+  | { readonly status: "rejected" };
 
 export interface TokenIntrospector {
   introspect(accessToken: string, now: Date): Promise<TokenIntrospection>;
