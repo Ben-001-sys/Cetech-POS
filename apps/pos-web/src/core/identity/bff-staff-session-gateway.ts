@@ -8,8 +8,13 @@ import {
   type StaffSessionContext,
 } from "./staff-session-context";
 
+export type StaffSessionEstablishRequest = {
+  readonly accessToken: string;
+  readonly correlationId: string;
+};
+
 export type StaffSessionBffGateway = StaffSessionGateway & {
-  establish(accessToken: string): Promise<ApiResult<StaffSessionContext>>;
+  establish(request: StaffSessionEstablishRequest): Promise<ApiResult<StaffSessionContext>>;
   readContext(): Promise<ApiResult<StaffSessionContext>>;
 };
 
@@ -68,9 +73,9 @@ export function createBffStaffSessionGateway(
 
   async function request(
     method: "GET" | "POST" | "DELETE",
-    init: { readonly accessToken?: string; readonly csrf?: boolean } = {},
+    init: { readonly accessToken?: string; readonly csrf?: boolean; readonly correlationId?: string } = {},
   ): Promise<ApiResult<StaffSessionContext>> {
-    const correlation = correlationId();
+    const correlation = init.correlationId ?? correlationId();
     const headers: Record<string, string> = {
       "x-correlation-id": correlation,
     };
@@ -91,16 +96,16 @@ export function createBffStaffSessionGateway(
         unavailable(correlation, "staff session response was not JSON"),
       );
       if (!body.ok) {
-        return body;
+        return init.correlationId ? { ...body, correlationId: init.correlationId } : body;
       }
       const parsed = parseStaffSessionContext(body.data);
       if (!parsed) {
         if (method === "DELETE") {
-          return body;
+          return init.correlationId ? { ...body, correlationId: init.correlationId } : body;
         }
         return unavailable(correlation, "staff session payload is invalid");
       }
-      return { ok: true, data: parsed, correlationId: body.correlationId };
+      return { ok: true, data: parsed, correlationId: init.correlationId ?? body.correlationId };
     } catch {
       reportStaffSignInDiagnostic({
         correlationId: correlation,
@@ -113,12 +118,15 @@ export function createBffStaffSessionGateway(
   }
 
   return {
-    async establish(accessToken: string) {
-      const posted = await request("POST", { accessToken });
+    async establish(attempt) {
+      const posted = await request("POST", {
+        accessToken: attempt.accessToken,
+        correlationId: attempt.correlationId,
+      });
       if (!posted.ok) {
         return posted;
       }
-      const recovered = await request("GET");
+      const recovered = await request("GET", { correlationId: attempt.correlationId });
       // POST only establishes the cookie. Its Session has no register list, so
       // a failed assignment read stays a failure instead of zero assignments.
       return recovered;

@@ -1,14 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { establishStaffSession } from "../../server/auth/staff-session";
-import { handleEstablishStaffSession } from "../../server/auth/handle-staff-session";
+import { handleEstablishStaffSession, handleReadStaffSession } from "../../server/auth/handle-staff-session";
+import { createEphemeralInMemoryStaffSessionStore } from "../../server/auth/session-store";
+import type { Register } from "../../../../../docs/contracts/domain.generated";
+import type { RegisterPort } from "../../../../../docs/contracts/ports";
 import { SystemHealthPanel } from "../../features/admin/SystemHealthPanel";
 import { LoginScreen } from "../../features/auth/LoginScreen";
 import { formatOperationalDateTime } from "../../ui/cashier-language";
 import { STAFF_PRESENTATION_COPY } from "./staff-presentation-notice";
-import { createPublicSupabaseStaffAuthProvider, StaffAuthError } from "./staff-auth-provider";
+import { createPublicSupabaseStaffAuthProvider, StaffAuthError, type StaffAuthSuccess } from "./staff-auth-provider";
 import { createBffStaffSessionGateway } from "./bff-staff-session-gateway";
-import { createStaffRuntimeController } from "./staff-runtime";
+import { createMemorySelectedRegisterStore } from "./selected-register-preference";
+import { createStaffRuntimeController, type StaffRuntimeController } from "./staff-runtime";
 import {
   acceptStaffSignInReport,
   classifyPasswordGrantDiagnostic,
@@ -195,7 +199,10 @@ describe("staff sign-in diagnostics", () => {
         throw new TypeError("socket hang up");
       }) as typeof fetch,
     });
-    const result = await gateway.establish("synthetic-access-token");
+    const result = await gateway.establish({
+      accessToken: "synthetic-access-token",
+      correlationId: CORRELATION,
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.correlationId).toBe(CORRELATION);
     expect(reports).toEqual([CORRELATION]);
@@ -324,10 +331,246 @@ describe("staff sign-in diagnostics", () => {
     expect(first).toBeGreaterThanOrEqual(0);
     expect(second).toBeGreaterThan(first);
   });
+
+  test("provider success keeps one correlation when session-store creation fails", async () => {
+    const calls: string[] = [];
+    let serverBody = "";
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      fetchImpl: async (_url, init) => {
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        calls.push(`${init?.method ?? "GET"} ${correlation}`);
+        const result = await handleEstablishStaffSession({
+          correlationIdHeader: correlation,
+          origin: "http://localhost:3000",
+          referer: null,
+          authorizationHeader: headerValue(init?.headers, "authorization"),
+          now: NOW,
+          verifier: { async verify() { return { ok: true as const, identity: IDENTITY }; } },
+          assignments: { async lookup() { throw new Error("assignments were not reached"); } },
+          store: {
+            async create() { throw new Error("store down"); },
+            async get() { return null; },
+            async revoke() { return; },
+            async revokeActorSessions() { return; },
+          },
+          allowedOrigins: ["http://localhost:3000"],
+          secureCookies: false,
+        });
+        serverBody = JSON.stringify(result.body);
+        return jsonResult(result.status, result.body);
+      },
+    });
+    const [row] = recentStaffSignInDiagnostics();
+    const cashier = renderCashier(outcome.runtime);
+    const health = renderHealth();
+    expect(calls).toEqual([`POST ${ATTEMPT}`]);
+    expect(outcome.signedIn.correlationId).toBe(ATTEMPT);
+    expect(serverBody).toContain(ATTEMPT);
+    expect(row?.correlationId).toBe(ATTEMPT);
+    expect(row?.reason).toBe("session_store_unavailable");
+    expect(row?.sessionStoreReached).toBe(true);
+    expect(row?.createdAt).toBeTruthy();
+    expect(outcome.log).toContain(ATTEMPT);
+    expect(outcome.runtime.getState().supportReference).toBe(ATTEMPT);
+    expect(outcome.runtime.getState().presentationNotice).toBe("provider_unavailable");
+    expect(cashier).toContain(`Reference ${ATTEMPT}`);
+    expect(health).toContain(`Reference ${ATTEMPT}`);
+    expect(secretFree(serverBody, JSON.stringify(row), outcome.log, JSON.stringify(outcome.runtime.getState()), cashier, health)).toBe(true);
+  });
+
+  test("provider success keeps one correlation when the verifier times out", async () => {
+    const calls: string[] = [];
+    let serverBody = "";
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      fetchImpl: async (_url, init) => {
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        calls.push(`${init?.method ?? "GET"} ${correlation}`);
+        const result = await handleEstablishStaffSession({
+          correlationIdHeader: correlation,
+          origin: "http://localhost:3000",
+          referer: null,
+          authorizationHeader: headerValue(init?.headers, "authorization"),
+          now: NOW,
+          verifier: { async verify() { return { ok: false as const, reason: "timeout" as const }; } },
+          assignments: { async lookup() { throw new Error("assignments were not reached"); } },
+          store: unusedStore(),
+          allowedOrigins: ["http://localhost:3000"],
+          secureCookies: false,
+        });
+        serverBody = JSON.stringify(result.body);
+        return jsonResult(result.status, result.body);
+      },
+    });
+    const [row] = recentStaffSignInDiagnostics();
+    const cashier = renderCashier(outcome.runtime);
+    const health = renderHealth();
+    expect(calls).toEqual([`POST ${ATTEMPT}`]);
+    expect(outcome.signedIn.correlationId).toBe(ATTEMPT);
+    expect(row?.reason).toBe("provider_timeout");
+    expect(row?.sessionStoreReached).toBe(false);
+    expect(row?.correlationId).toBe(ATTEMPT);
+    expect(row?.createdAt).toBeTruthy();
+    expect(serverBody).toContain(ATTEMPT);
+    expect(outcome.log).toContain(ATTEMPT);
+    expect(outcome.runtime.getState().supportReference).toBe(ATTEMPT);
+    expect(cashier).toContain(`Reference ${ATTEMPT}`);
+    expect(health).toContain(`Reference ${ATTEMPT}`);
+    expect(secretFree(serverBody, JSON.stringify(row), outcome.log, JSON.stringify(outcome.runtime.getState()), cashier, health)).toBe(true);
+  });
+
+  test("session POST and the required GET share the provider attempt correlation", async () => {
+    const store = createEphemeralInMemoryStaffSessionStore();
+    let cookieHeader = "";
+    const calls: string[] = [];
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      registers: readyRegisters(),
+      fetchImpl: async (_url, init) => {
+        const method = init?.method ?? "GET";
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        calls.push(`${method} ${correlation}`);
+        if (method === "POST") {
+          const result = await handleEstablishStaffSession({
+            correlationIdHeader: correlation,
+            origin: "http://localhost:3000",
+            referer: null,
+            authorizationHeader: headerValue(init?.headers, "authorization"),
+            now: NOW,
+            verifier: { async verify() { return { ok: true as const, identity: IDENTITY }; } },
+            assignments: {
+              async lookup() {
+                return { locationIds: ["loc_a1"], registerIds: ["reg_a"], locationRoles: [] };
+              },
+            },
+            store,
+            allowedOrigins: ["http://localhost:3000"],
+            secureCookies: false,
+          });
+          cookieHeader = result.cookies.join("; ");
+          return jsonResult(result.status, result.body);
+        }
+        const result = await handleReadStaffSession({
+          correlationIdHeader: correlation,
+          origin: "http://localhost:3000",
+          referer: null,
+          cookieHeader,
+          now: NOW,
+          store,
+          assignments: { async lookup() { return "unavailable"; } },
+          allowedOrigins: ["http://localhost:3000"],
+        });
+        return jsonResult(result.status, result.body);
+      },
+    });
+    const cashier = renderCashier(outcome.runtime);
+    expect(outcome.signedIn.correlationId).toBe(ATTEMPT);
+    expect(calls).toEqual([`POST ${ATTEMPT}`, `GET ${ATTEMPT}`]);
+    expect(outcome.runtime.getState().supportReference).toBe(ATTEMPT);
+    expect(outcome.runtime.getState().presentationNotice).toBe("assignments_unavailable");
+    expect(cashier).toContain(STAFF_PRESENTATION_COPY.assignments_unavailable.replaceAll("'", "&#x27;"));
+    expect(cashier).toContain(`Reference ${ATTEMPT}`);
+    expect(cashier).not.toContain("No register assigned");
+    expect(secretFree(cashier, JSON.stringify(outcome.runtime.getState()), outcome.log)).toBe(true);
+  });
+
+  test("a BFF transport failure reports the provider attempt correlation", async () => {
+    const reports: string[] = [];
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      fetchImpl: async (_url, init) => {
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        if (headerValue(init?.headers, "x-cetech-sign-in-report") === "1") {
+          reports.push(correlation);
+          return jsonResult(200, {});
+        }
+        throw new TypeError("socket hang up");
+      },
+    });
+    const cashier = renderCashier(outcome.runtime);
+    expect(reports).toEqual([ATTEMPT]);
+    expect(outcome.signedIn.correlationId).toBe(ATTEMPT);
+    expect(outcome.runtime.getState().supportReference).toBe(ATTEMPT);
+    expect(cashier).toContain(`Reference ${ATTEMPT}`);
+    expect(JSON.stringify(outcome.runtime.getState())).not.toContain(FRESH);
+    expect(secretFree(reports.join("\n"), JSON.stringify(outcome.runtime.getState()), cashier)).toBe(true);
+  });
+
+  test("a later session refresh mints a fresh correlation", async () => {
+    const calls: string[] = [];
+    let refreshAllowed = false;
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      nextRequestId: () => {
+        if (!refreshAllowed) throw new Error("sign-in establishment minted a second correlation");
+        return FRESH;
+      },
+      registers: readyRegisters(),
+      fetchImpl: async (_url, init) => {
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        calls.push(`${init?.method ?? "GET"} ${correlation}`);
+        return jsonResult(200, {
+          ok: true,
+          correlationId: correlation,
+          data: {
+            session: SESSION_CONTEXT.session,
+            assignedLocationIds: ["loc_a1"],
+            assignedRegisterIds: ["reg_a"],
+          },
+        });
+      },
+    });
+    expect(outcome.runtime.getState().status).toBe("ready");
+    expect(outcome.runtime.getState().supportReference).toBeUndefined();
+    expect(calls).toEqual([`POST ${ATTEMPT}`, `GET ${ATTEMPT}`]);
+    refreshAllowed = true;
+    await outcome.runtime.refreshRegister();
+    expect(calls).toEqual([`POST ${ATTEMPT}`, `GET ${ATTEMPT}`, `GET ${FRESH}`]);
+    expect(ATTEMPT).not.toBe(FRESH);
+  });
+
+  test("wrong password and disabled access do not create a support reference", async () => {
+    for (const failure of ["wrong", "disabled"] as const) {
+      clearStaffSignInDiagnostics();
+      const captured = await capturePasswordGrant(failure);
+      expect(captured.reports).toEqual([]);
+      expect(captured.error.correlationId).toBeUndefined();
+      expect(recentStaffSignInDiagnostics()).toEqual([]);
+      const runtime = createStaffRuntimeController({
+        gateway: {
+          async establish() { throw new Error("bff must not run"); },
+          async readContext() { throw new Error("not reached"); },
+          async read() { return null; },
+          async clear() { return; },
+        },
+        auth: {
+          async signIn() { throw captured.error; },
+          async signOut() { return; },
+        },
+        registers: idleRegisters(),
+      });
+      await runtime.signIn({ email: EMAIL, password: PASSWORD });
+      const notice = failure === "wrong" ? "invalid_credentials" : "access_disabled";
+      const html = renderToStaticMarkup(
+        <LoginScreen noticeState={notice} supportReference={runtime.getState().supportReference} />,
+      );
+      expect(runtime.getState().presentationNotice).toBe(notice);
+      expect(runtime.getState().supportReference).toBeUndefined();
+      expect(html).toContain(STAFF_PRESENTATION_COPY[notice]);
+      expect(html).not.toContain("Reference");
+      expect(secretFree(html, JSON.stringify(runtime.getState()))).toBe(true);
+    }
+    expect(STAFF_PRESENTATION_COPY.invalid_credentials).toBe("Incorrect email or password.");
+    expect(STAFF_PRESENTATION_COPY.access_disabled).toBe("Your POS access is disabled. Contact a manager.");
+  });
 });
 
 const EMAIL = "cashier@example.com";
 const PASSWORD = "CorrectHorse7Battery";
+const ATTEMPT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const FRESH = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const NOW = new Date("2026-09-29T12:00:00.000Z");
 const AUTH_ENV = {
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "publishable-test-key",
@@ -340,6 +583,23 @@ const IDENTITY = {
   registerId: null,
   capabilities: [],
   expiresAt: "2026-09-30T12:00:00.000Z",
+};
+const REGISTER: Register = {
+  id: "reg_a",
+  name: "Front Counter",
+  locationId: "loc_a1",
+  currency: "GHS",
+  status: "active",
+};
+const SESSION_CONTEXT = {
+  session: {
+    actorId: "cashier_a",
+    displayName: "Ama",
+    organizationId: "org_a",
+    locationIds: ["loc_a1"],
+    capabilities: [],
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  },
 };
 
 function unusedStore() {
@@ -362,7 +622,7 @@ function headerValue(headers: HeadersInit | undefined, name: string): string {
   return record[name] ?? record[name.toLowerCase()] ?? "";
 }
 
-async function capturePasswordGrant(failure: "timeout" | "transport" | "wrong" | "rejected"): Promise<{
+async function capturePasswordGrant(failure: "timeout" | "transport" | "wrong" | "rejected" | "disabled"): Promise<{
   readonly reports: { readonly correlation: string; readonly body: string }[];
   readonly error: StaffAuthError;
 }> {
@@ -380,10 +640,11 @@ async function capturePasswordGrant(failure: "timeout" | "transport" | "wrong" |
       if (!init?.signal) throw new Error("password grant is missing its timeout signal");
       if (failure === "timeout") throw new DOMException("timed out", "TimeoutError");
       if (failure === "transport") throw new TypeError("fetch failed");
-      if (failure === "wrong") {
+      if (failure === "wrong" || failure === "disabled") {
         return new Response(JSON.stringify({
-          error_code: "invalid_credentials",
+          error_code: failure === "disabled" ? "user_banned" : "invalid_credentials",
           access_token: "access-token-value",
+          refresh_token: "refresh-token-value",
           invite: "invite-token-value",
         }), { status: 400, headers: { "content-type": "application/json" } });
       }
@@ -431,7 +692,122 @@ function secretFree(...parts: string[]): boolean {
     && !text.includes(PASSWORD)
     && !text.includes("Bearer ")
     && !text.includes("access-token-value")
+    && !text.includes("refresh-token-value")
     && !text.includes("service-role-key")
     && !text.includes("service_role")
     && !text.includes("invite-token-value");
+}
+
+function jsonResult(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function idleRegisters(): RegisterPort {
+  const fail = async () => {
+    throw new Error("register was not reached");
+  };
+  return { get: fail, activeShift: fail, open: fail, cashMovement: fail, close: fail, report: fail };
+}
+
+function readyRegisters(): RegisterPort {
+  const fail = async () => {
+    throw new Error("register command was not reached");
+  };
+  return {
+    async get() {
+      return { ok: true, data: REGISTER, correlationId: ATTEMPT };
+    },
+    async activeShift() {
+      return { ok: true, data: null, correlationId: ATTEMPT };
+    },
+    open: fail,
+    cashMovement: fail,
+    close: fail,
+    report: fail,
+  };
+}
+
+function renderCashier(runtime: StaffRuntimeController): string {
+  const state = runtime.getState();
+  const notice = state.presentationNotice === "assignments_unavailable"
+    || state.presentationNotice === "provider_unavailable"
+    || state.presentationNotice === "invalid_credentials"
+    || state.presentationNotice === "access_disabled"
+    ? state.presentationNotice
+    : "provider_unavailable";
+  return renderToStaticMarkup(
+    <LoginScreen noticeState={notice} supportReference={state.supportReference} />,
+  );
+}
+
+function renderHealth(): string {
+  return renderToStaticMarkup(
+    <SystemHealthPanel
+      view={{
+        overall: "degraded",
+        buildId: "build-ok",
+        checks: [],
+        signInDiagnostics: recentStaffSignInDiagnostics(),
+      }}
+    />,
+  );
+}
+
+async function signInAttempt(input: {
+  readonly attemptId: string;
+  readonly fetchImpl: typeof fetch;
+  readonly registers?: RegisterPort;
+  readonly nextRequestId?: () => string;
+}): Promise<{
+  readonly signedIn: StaffAuthSuccess;
+  readonly runtime: StaffRuntimeController;
+  readonly log: string;
+}> {
+  clearStaffSignInDiagnostics();
+  const provider = createPublicSupabaseStaffAuthProvider({
+    env: AUTH_ENV,
+    correlationId: () => input.attemptId,
+    fetchImpl: async (_url, init) => {
+      if (!init?.signal) throw new Error("password grant is missing its timeout signal");
+      return jsonResult(200, {
+        access_token: "access-token-value",
+        refresh_token: "refresh-token-value",
+      });
+    },
+  });
+  let signedIn: StaffAuthSuccess | undefined;
+  const runtime = createStaffRuntimeController({
+    gateway: createBffStaffSessionGateway({
+      fetchImpl: input.fetchImpl,
+      correlationId: input.nextRequestId ?? (() => {
+        throw new Error("sign-in establishment minted a second correlation");
+      }),
+    }),
+    auth: {
+      async signIn(request) {
+        signedIn = await provider.signIn(request);
+        return signedIn;
+      },
+      async signOut() {
+        return;
+      },
+    },
+    registers: input.registers ?? idleRegisters(),
+    selectedRegisterStore: createMemorySelectedRegisterStore(),
+  });
+  const lines: string[] = [];
+  const original = console.info;
+  console.info = (message?: unknown) => {
+    lines.push(String(message));
+  };
+  try {
+    await runtime.signIn({ email: EMAIL, password: PASSWORD });
+  } finally {
+    console.info = original;
+  }
+  if (!signedIn) throw new Error("provider did not return a sign-in result");
+  return { signedIn, runtime, log: lines.join("\n") };
 }

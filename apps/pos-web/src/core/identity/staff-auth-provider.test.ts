@@ -102,4 +102,29 @@ describe("supabase password grant classification", () => {
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(reports).toHaveLength(1);
   });
+
+  test("a successful password grant keeps the attempt correlation", async () => {
+    let minted = 0;
+    const provider = createPublicSupabaseStaffAuthProvider({
+      env: ENV,
+      correlationId: () => {
+        minted += 1;
+        return "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      },
+      isOnline: () => true,
+      fetchImpl: async () => jsonResponse(200, {
+        access_token: "access-token-value",
+        refresh_token: "refresh-token-value",
+      }),
+    });
+    await expect(provider.signIn({ email: " ", password: "" })).rejects.toMatchObject({
+      kind: "credentials_required",
+    });
+    expect(minted).toBe(0);
+    await expect(provider.signIn({ email: "cashier@example.com", password: "secret" })).resolves.toEqual({
+      accessToken: "access-token-value",
+      correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    expect(minted).toBe(1);
+  });
 });

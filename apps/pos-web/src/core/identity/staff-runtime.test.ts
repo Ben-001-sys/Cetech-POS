@@ -93,7 +93,7 @@ function sessionFetch(assignedRegisterIds: () => readonly string[]): typeof fetc
 function authStub() {
   return {
     async signIn() {
-      return { accessToken: "staff-access-token" };
+      return { accessToken: "staff-access-token", correlationId: CORRELATION };
     },
     async signOut() {
       return;
@@ -1521,7 +1521,7 @@ describe("explicit sign-out retires local authority before remote logout", () =>
       gateway: unavailableGateway(async () => undefined),
       auth: {
         async signIn() {
-          return { accessToken: "staff-access-token" };
+          return { accessToken: "staff-access-token", correlationId: CORRELATION };
         },
         async signOut() {
           expect(offlineStore.read(later)).toBeNull();

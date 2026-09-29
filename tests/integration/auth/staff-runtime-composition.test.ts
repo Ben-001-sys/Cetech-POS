@@ -116,7 +116,7 @@ describe("STG-02 staff runtime composition", () => {
       gateway: createBffStaffSessionGateway({ fetchImpl, correlationId: () => CORRELATION }),
       auth: {
         async signIn() {
-          return { accessToken: "staff-access-token" };
+          return { accessToken: "staff-access-token", correlationId: CORRELATION };
         },
         async signOut() {
           return;

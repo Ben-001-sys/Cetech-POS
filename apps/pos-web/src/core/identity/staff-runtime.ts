@@ -608,7 +608,10 @@ export function createStaffRuntimeController(input: {
       setState({ ...state, status: "restoring", errorMessage: undefined, presentationNotice: undefined, supportReference: undefined });
       try {
         const signedIn = await input.auth.signIn(request);
-        const established = await input.gateway.establish(signedIn.accessToken);
+        const established = await input.gateway.establish({
+          accessToken: signedIn.accessToken,
+          correlationId: signedIn.correlationId,
+        });
         await applyContext(established, epochAtStart);
       } catch (error) {
         if (epochAtStart !== authorityEpoch) return;

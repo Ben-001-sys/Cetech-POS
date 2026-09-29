@@ -90,7 +90,7 @@ describe("lineage reconciliation", () => {
       },
       auth: {
         async signIn() {
-          return { ok: true as const, accessToken: "synthetic" };
+          return { accessToken: "synthetic", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;
@@ -147,7 +147,7 @@ describe("lineage reconciliation", () => {
       },
       auth: {
         async signIn() {
-          return { ok: true as const, accessToken: "synthetic" };
+          return { accessToken: "synthetic", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;
@@ -272,7 +272,7 @@ describe("lineage reconciliation", () => {
       },
       auth: {
         async signIn() {
-          return { ok: true as const, accessToken: "synthetic" };
+          return { accessToken: "synthetic", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;
@@ -327,7 +327,7 @@ describe("lineage reconciliation", () => {
       },
       auth: {
         async signIn() {
-          return { ok: true as const, accessToken: "synthetic" };
+          return { accessToken: "synthetic", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;

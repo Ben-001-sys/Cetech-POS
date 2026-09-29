@@ -7,8 +7,13 @@ export type StaffSignInRequest = {
   readonly password?: string;
 };
 
+export type StaffAuthSuccess = {
+  readonly accessToken: string;
+  readonly correlationId: string;
+};
+
 export type StaffAuthProvider = {
-  signIn(request?: StaffSignInRequest): Promise<{ readonly accessToken: string }>;
+  signIn(request?: StaffSignInRequest): Promise<StaffAuthSuccess>;
   signOut(): Promise<void>;
 };
 
@@ -25,6 +30,7 @@ export type PublicSupabaseStaffAuthOptions = {
   readonly fetchImpl?: FetchLike;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly isOnline?: () => boolean;
+  readonly correlationId?: () => string;
 };
 
 /** Matches the server Auth introspector. A hung password grant becomes provider_timeout. */
@@ -53,6 +59,7 @@ export function createPublicSupabaseStaffAuthProvider(
   options: PublicSupabaseStaffAuthOptions = {},
 ): StaffAuthProvider {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const nextCorrelationId = options.correlationId ?? (() => crypto.randomUUID());
   return {
     async signIn(request) {
       const env = readPublicStaffAuthEnv(options.env);
@@ -69,7 +76,7 @@ export function createPublicSupabaseStaffAuthProvider(
       if (!email || !password) {
         throw new StaffAuthError("credentials_required", "staff credentials are required");
       }
-      const correlationId = crypto.randomUUID();
+      const correlationId = nextCorrelationId();
       let response: Response;
       try {
         response = await fetchImpl(`${env.url.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
@@ -119,7 +126,7 @@ export function createPublicSupabaseStaffAuthProvider(
       if (payload.access_token.toUpperCase().includes("SERVICE_ROLE")) {
         throw new StaffAuthError("invalid_credentials", "staff identity could not be verified");
       }
-      return { accessToken: payload.access_token };
+      return { accessToken: payload.access_token, correlationId };
     },
     async signOut() {
       return;

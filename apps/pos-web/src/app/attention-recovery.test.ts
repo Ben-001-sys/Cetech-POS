@@ -646,7 +646,7 @@ describe("CAN-01 local recovery scope", () => {
       },
       auth: {
         async signIn() {
-          return { accessToken: "token" };
+          return { accessToken: "token", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;
@@ -775,7 +775,7 @@ describe("CAN-01 local recovery scope", () => {
       },
       auth: {
         async signIn() {
-          return { accessToken: "token" };
+          return { accessToken: "token", correlationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
         },
         async signOut() {
           return;
