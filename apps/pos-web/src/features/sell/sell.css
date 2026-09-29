@@ -1007,6 +1007,7 @@ button.product-card:disabled {
 
 @media print {
   @page {
+    size: 80mm auto;
     margin: 2mm;
   }
 
@@ -1069,6 +1070,16 @@ button.product-card:disabled {
     background: #fff !important;
     color: #000 !important;
     overflow: visible !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .receipt-paper .r-row {
+    gap: 6px !important;
+  }
+
+  .receipt-paper .r-row span {
+    overflow-wrap: anywhere;
   }
 
   .receipt-paper .muted {

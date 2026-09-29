@@ -22,8 +22,9 @@ describe("BUG #85 thermal browser receipt printing", () => {
   test("browser print removes the POS shell from layout and exposes an 80mm receipt only", () => {
     expect(css).toContain("@media print");
     expect(css).toContain("@page");
+    expect(css).toContain("size: 80mm auto");
     expect(css).toContain("margin: 2mm");
-    expect(css).not.toContain("size: 80mm auto");
+    expect(css).toContain("font-size: 12px");
     expect(css).toContain(
       "body *:not(:has(.receipt-print-host)):not(.receipt-print-host):not(.receipt-print-host *)",
     );
@@ -44,10 +45,13 @@ describe("BUG #85 thermal browser receipt printing", () => {
   });
 
   test("Orders reprint mounts the immutable receipt snapshot before window.print", () => {
-    expect(workspace).toContain("mapReceiptSnapshot(receipt.data)");
+    expect(workspace).toContain("reprintImmutableReceipt");
+    expect(workspace).toContain("flushSync(() =>");
+    expect(workspace).toContain("receiptPaperIsMounted(document, view.receiptNumber)");
     expect(workspace).toContain('className="receipt-print-host"');
     expect(workspace).toContain("<ReceiptPaper receipt={printReceipt} />");
-    expect(workspace).toContain(".print({ receiptId: receipt.data.id, reason: \"reprint\" })");
-    expect(checkout).toContain("window.print()");
+    expect(workspace).toContain('reason: "reprint"');
+    expect(workspace).not.toContain("window.setTimeout");
+    expect(sellRuntime).toContain("receiptPaperIsMounted(document, receipt.receiptNumber)");
   });
 });

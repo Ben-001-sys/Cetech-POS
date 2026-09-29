@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { CustomerPort, PrintPort, ReceiptPort } from "../../../../docs/contracts/ports";
 import type { CustomerSummary, StoreHealth } from "../../../../docs/contracts/domain.generated";
 import type { PaymentMethodCapabilities } from "../server/payments/method-capabilities";
@@ -8,6 +9,7 @@ import { OrdersScreen, OrderDetailDialog, type OrderDetailView, type OrderListIt
 import { ReceiptPaper } from "../features/sell/components/ReceiptPaper";
 import type { ReceiptViewModel } from "../features/sell/state/checkoutSession";
 import { mapReceiptSnapshot } from "../features/sell/runtime/cashCheckoutController";
+import { receiptPaperIsMounted, reprintImmutableReceipt } from "../features/orders/reprint-receipt";
 import { CustomersScreen } from "../features/customers";
 import { loadCustomerSearchPresentation } from "../features/customers/loadCustomerSearch";
 import { SettingsScreen, type AppearancePreference } from "../features/settings";
@@ -229,25 +231,29 @@ function OrdersWorkspace({
                 setActionMessage(undefined);
                 setActionError(undefined);
                 void (async () => {
-                  const receipt = await receipts.getByTransaction(order.id);
-                  if (!receipt.ok) {
-                    setActionError("Receipt could not be loaded. The sale has not been changed.");
+                  const outcome = await reprintImmutableReceipt({
+                    transactionId: order.id,
+                    receipts,
+                    mapReceipt: mapReceiptSnapshot,
+                    present: (view) => {
+                      flushSync(() => {
+                        setPrintReceipt(view);
+                      });
+                      return receiptPaperIsMounted(document, view.receiptNumber);
+                    },
+                    print: (receiptId) => printer.print({ receiptId, reason: "reprint" }),
+                  });
+                  if (!outcome.ok) {
+                    setPrintReceipt(null);
+                    setActionError(outcome.message);
                     return;
                   }
-                  setPrintReceipt(mapReceiptSnapshot(receipt.data));
-                  window.setTimeout(() => {
-                    void printer
-                      .print({ receiptId: receipt.data.id, reason: "reprint" })
-                      .then((result) => {
-                        if (result.status === "dialog_opened") {
-                          setActionMessage("Print dialog opened.");
-                        } else {
-                          setActionError(result.message ?? "Receipt printing is not available.");
-                        }
-                      })
-                      .catch(() => setActionError("Receipt printing failed. The sale has not been changed."))
-                      .finally(() => setPrintReceipt(null));
-                  }, 0);
+                  if (outcome.printed.status === "dialog_opened") {
+                    setActionMessage("Print dialog opened.");
+                  } else {
+                    setActionError(outcome.printed.message ?? "Receipt printing is not available.");
+                  }
+                  setPrintReceipt(null);
                 })();
               }
             : undefined

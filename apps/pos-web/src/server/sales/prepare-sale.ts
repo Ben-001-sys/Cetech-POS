@@ -7,6 +7,7 @@ import type {
   Quote,
   ReceiptLine,
 } from "../../../../../docs/contracts/domain.generated";
+import { customerReceiptPlaceLabel } from "../../core/receipt/customer-presentation";
 import { loadSalePresentation } from "../../core/receipt/build-receipt-line";
 import type { CatalogPresentationLookup } from "../../core/receipt/catalog-presentation";
 import {
@@ -467,9 +468,9 @@ async function persistPrepared(input: {
   await input.store.seedPreparedSale({
     organizationId: input.actor.organizationId,
     locationId: register.locationId,
-    locationName: register.locationId,
+    locationName: customerReceiptPlaceLabel(register.locationName, "Store"),
     registerId: register.id,
-    registerName: register.name,
+    registerName: customerReceiptPlaceLabel(register.name, "Register"),
     deviceId: input.request.deviceId,
     shiftId: input.request.shiftId,
     cashierId: input.actor.actorId,

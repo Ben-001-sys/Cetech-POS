@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { receiptPaperIsMounted } from "../../orders/reprint-receipt";
 import type { CartDraftStore, CatalogPort, CheckoutUseCases, CustomerPort, PaymentPort, PricingPort, PrintPort, ReceiptPort, SalesPort } from "../../../../../../docs/contracts/ports";
 import { SellScreen } from "../SellScreen";
 import { ReceiptPaper } from "../components/ReceiptPaper";
@@ -419,6 +420,10 @@ export function SellRuntimeScreen(ports: SellSessionPorts) {
           flushSync(() => {
             setPrintReceipt(receipt);
           });
+          if (!receiptPaperIsMounted(document, receipt.receiptNumber)) {
+            setPrintReceipt(null);
+            return;
+          }
           void cashCheckout.printReceipt().finally(() => {
             setPrintReceipt(null);
           });

@@ -102,8 +102,9 @@ async function seedRuntime(settings: ReceiptSettings = {
   const store = createInMemoryCheckoutStore();
   await store.seedRegister({
     id: "reg_a1",
-    name: "Register 1",
+    name: "Front Counter",
     locationId: "loc_a1",
+    locationName: "Accra Main Store",
     currency: "GHS",
     status: "active",
     organizationId: "org_a",
@@ -436,7 +437,29 @@ describe("receipt product-name snapshot", () => {
     expect(receipt.data.lines[0]?.name).toBe(FULL_NAME);
     expect(receipt.data.lines[0]?.displayName).toBe(`Armoured Cable 4-${RECEIPT_DISPLAY_NAME_ELLIPSIS}`);
     expect(receipt.data.lines[0]?.sku).toBe("CBL-ARM-RED");
+    expect(receipt.data.locationName).toBe("Accra Main Store");
+    expect(receipt.data.registerName).toBe("Front Counter");
+    expect(receipt.data.locationName).not.toContain("loc_");
     expect(sale?.lines[0]?.displayName).toBeUndefined();
+    await runtime.store.seedRegister({
+      id: "reg_a1",
+      name: "Renamed Counter",
+      locationId: "loc_a1",
+      locationName: "Renamed Store",
+      currency: "GHS",
+      status: "active",
+      organizationId: "org_a",
+    });
+    const historic = await getReceiptByTransaction({
+      store: runtime.store,
+      actor: ACTOR,
+      transactionId: TX,
+      context: { correlationId: CORRELATION },
+    });
+    expect(historic.ok).toBe(true);
+    if (!historic.ok) throw new Error("expected historic receipt");
+    expect(historic.data).toEqual(receipt.data);
+    expect(historic.data.locationName).toBe("Accra Main Store");
   });
 
   test("legacy receipt without displayName still deserializes", () => {

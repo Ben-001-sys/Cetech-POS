@@ -26,6 +26,8 @@ export type StaffActor = Pick<Session, "actorId" | "displayName" | "organization
 
 export type StoredRegister = Register & {
   readonly organizationId: Id;
+  /** Human location label captured for new receipts. Absent on older register rows. */
+  readonly locationName?: string;
 };
 
 export type StoredDevice = {

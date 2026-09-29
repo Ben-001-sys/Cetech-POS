@@ -18,6 +18,7 @@ import type {
 } from "../../../../../../docs/contracts/ports";
 import { parseDecimalToMinorUnits } from "../../register/parseDecimalToMinorUnits";
 import { cashierErrorMessage, withDoNotChargeAgain } from "../../../ui/cashier-language";
+import { customerReceiptPlaceLabel } from "../../../core/receipt/customer-presentation";
 import {
   canBeginNewSale,
   canReturnToPaymentChoice,
@@ -88,8 +89,8 @@ export function mapReceiptSnapshot(snapshot: ReceiptSnapshot): ReceiptViewModel 
     receiptNumber: snapshot.receiptNumber,
     orderReference: snapshot.orderReference,
     issuedAt: snapshot.issuedAt,
-    locationName: snapshot.locationName,
-    registerName: snapshot.registerName,
+    locationName: customerReceiptPlaceLabel(snapshot.locationName, "Store"),
+    registerName: customerReceiptPlaceLabel(snapshot.registerName, "Register"),
     cashierName: snapshot.cashierName,
     customerLabel: snapshot.customerLabel,
     lines: snapshot.lines.map((line) => ({
