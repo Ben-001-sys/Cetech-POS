@@ -241,7 +241,7 @@ describe("staff sign-in diagnostics", () => {
       allowedOrigins: ["http://localhost:3000"],
       secureCookies: false,
     });
-    expect(result.ok === false || result.body.ok === false).toBe(true);
+    expect(result.body.ok).toBe(false);
     const [row] = recentStaffSignInDiagnostics();
     expect(row?.reason).toBe("session_store_unavailable");
     expect(row?.sessionStoreReached).toBe(true);
@@ -312,12 +312,15 @@ describe("staff sign-in diagnostics", () => {
     recordStaffSignInDiagnostic(sessionStoreDiagnostic(CORRELATION), () => new Date("2026-09-29T12:05:00.000Z"));
     const rows = recentStaffSignInDiagnostics();
     expect(rows.map((row) => row.reason)).toEqual(["session_store_unavailable", "session_store_unavailable"]);
-    expect(rows[0]?.createdAt < (rows[1]?.createdAt ?? "")).toBe(true);
+    const earlier = rows[0];
+    const later = rows[1];
+    if (!earlier || !later) throw new Error("expected two diagnostic rows");
+    expect(earlier.createdAt < later.createdAt).toBe(true);
     const html = renderToStaticMarkup(
       <SystemHealthPanel view={{ overall: "degraded", buildId: "build-ok", checks: [], signInDiagnostics: rows }} />,
     );
-    const first = html.indexOf(formatOperationalDateTime(rows[0]!.createdAt));
-    const second = html.indexOf(formatOperationalDateTime(rows[1]!.createdAt));
+    const first = html.indexOf(formatOperationalDateTime(earlier.createdAt));
+    const second = html.indexOf(formatOperationalDateTime(later.createdAt));
     expect(first).toBeGreaterThanOrEqual(0);
     expect(second).toBeGreaterThan(first);
   });

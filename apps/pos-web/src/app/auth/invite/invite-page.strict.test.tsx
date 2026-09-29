@@ -39,8 +39,10 @@ async function inviteBundle(): Promise<string> {
     },
   });
   const output = Array.isArray(result) ? result[0] : result;
-  const code = output?.output.find((file) => "code" in file && file.fileName.endsWith(".js"));
-  if (!code || !("code" in code)) throw new Error("invite harness bundle was empty");
+  if (!output || !("output" in output)) throw new Error("invite harness bundle was empty");
+  const files = output.output as ReadonlyArray<{ readonly fileName: string; readonly code?: string }>;
+  const code = files.find((file) => file.fileName.endsWith(".js") && typeof file.code === "string");
+  if (!code?.code) throw new Error("invite harness bundle was empty");
   if (!code.code.includes("react.development") && !code.code.includes("react-dom.development") && !code.code.includes("Invoke-Component")) {
     throw new Error("invite harness must use the development React build so Strict Mode replays effects");
   }
