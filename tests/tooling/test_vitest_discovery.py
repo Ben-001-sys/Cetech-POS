@@ -60,6 +60,8 @@ SHOULD_NOT_MATCH = (
     '../../tests/frontend/visual/playwright.config.ts',
     '../../tests/frontend/evidence/shell-desktop.html',
     'e2e/scaffold.spec.ts',
+    'e2e/invite-acceptance-strict.spec.ts',
+    'e2e/thermal-receipt-print.spec.ts',
     'node_modules/pkg/index.test.js',
     '.next/types/routes.test.ts',
     'playwright-report/index.test.ts',
@@ -149,4 +151,19 @@ class VitestDiscoveryTests(unittest.TestCase):
     def test_playwright_and_generated_paths_are_not_discovered(self):
         for rel in SHOULD_NOT_MATCH:
             with self.subTest(path=rel):
+                self.assertFalse(discovered(rel, self.includes, self.excludes), rel)
+
+    def test_browser_qualification_specs_belong_to_playwright(self):
+        specs = (
+            'e2e/invite-acceptance-strict.spec.ts',
+            'e2e/thermal-receipt-print.spec.ts',
+        )
+        playwright = (APP / 'playwright.config.ts').read_text(encoding='utf-8')
+        self.assertIn('testDir: "./e2e"', playwright)
+        self.assertNotIn('testIgnore', playwright)
+        self.assertNotIn('testMatch', playwright)
+        for rel in specs:
+            with self.subTest(path=rel):
+                self.assertTrue((APP / rel).is_file(), rel)
+                self.assertTrue(rel.endswith('.spec.ts'), rel)
                 self.assertFalse(discovered(rel, self.includes, self.excludes), rel)
