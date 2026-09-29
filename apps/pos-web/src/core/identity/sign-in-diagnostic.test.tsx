@@ -379,6 +379,47 @@ describe("staff sign-in diagnostics", () => {
     expect(secretFree(serverBody, JSON.stringify(row), outcome.log, JSON.stringify(outcome.runtime.getState()), cashier, health)).toBe(true);
   });
 
+  test("canonical disabled access does not show a cashier support reference", async () => {
+    const outcome = await signInAttempt({
+      attemptId: ATTEMPT,
+      fetchImpl: async (_url, init) => {
+        const correlation = headerValue(init?.headers, "x-correlation-id");
+        const result = await handleEstablishStaffSession({
+          correlationIdHeader: correlation,
+          origin: "http://localhost:3000",
+          referer: null,
+          authorizationHeader: headerValue(init?.headers, "authorization"),
+          now: NOW,
+          verifier: { async verify() { return { ok: true as const, identity: IDENTITY }; } },
+          accessControl: { async status() { return "disabled"; } },
+          assignments: { async lookup() { throw new Error("assignments were not reached"); } },
+          store: unusedStore(),
+          allowedOrigins: ["http://localhost:3000"],
+          secureCookies: false,
+        });
+        expect(result.body.correlationId).toBe(ATTEMPT);
+        if (!result.body.ok) {
+          expect(result.body.error.code).toBe("FORBIDDEN");
+          expect(result.body.error.details?.field).toBe("pos_access");
+        }
+        return jsonResult(result.status, result.body);
+      },
+    });
+    const state = outcome.runtime.getState();
+    const cashier = renderCashier(outcome.runtime);
+    expect(outcome.signedIn.correlationId).toBe(ATTEMPT);
+    expect(state.status).toBe("unauthorized");
+    expect(state.presentationNotice).toBe("access_disabled");
+    expect(state.supportReference).toBeUndefined();
+    expect(state.session).toBeNull();
+    expect(state.register).toBeNull();
+    expect(cashier).toContain("Your POS access is disabled. Contact a manager.");
+    expect(cashier).not.toContain("Reference");
+    expect(recentStaffSignInDiagnostics()).toEqual([]);
+    expect(outcome.log).toBe("");
+    expect(secretFree(cashier, JSON.stringify(state))).toBe(true);
+  });
+
   test("provider success keeps one correlation when the verifier times out", async () => {
     const calls: string[] = [];
     let serverBody = "";

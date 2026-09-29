@@ -1051,6 +1051,7 @@ Owner/Admin test.
 **Expected:**
 - disabled staff loses active POS sessions;
 - cannot establish a new POS session;
+- a new sign-in shows **Your POS access is disabled. Contact a manager.** and does not add a Reference line;
 - audit/management record reflects the change.
 
 ### Your result

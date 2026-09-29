@@ -116,6 +116,15 @@ function presentationNoticeForFailure(result: ApiResult<unknown>): StaffPresenta
   return "provider_unavailable";
 }
 
+/** Cashier Reference is for support failures. Canonical POS disablement is an access decision. */
+function cashierSupportReference(result: ApiResult<unknown>): string | undefined {
+  if (result.ok) return undefined;
+  if (result.error.code === "FORBIDDEN" && result.error.details?.field === "pos_access") {
+    return undefined;
+  }
+  return result.correlationId;
+}
+
 function noticeForAuthFailure(kind: StaffAuthFailureKind): StaffPresentationNotice {
   switch (kind) {
     case "invalid_credentials":
@@ -516,7 +525,7 @@ export function createStaffRuntimeController(input: {
         status: noticeFromFailure(result),
         errorMessage: result.error.message,
         presentationNotice: presentationNoticeForFailure(result),
-        supportReference: result.correlationId,
+        supportReference: cashierSupportReference(result),
       });
       return;
     }

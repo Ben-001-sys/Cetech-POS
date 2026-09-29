@@ -108,6 +108,8 @@ If you see:
 
 A wrong email or password stays **Incorrect email or password.** That message does not add a Reference line.
 
+Disabled POS access stays **Your POS access is disabled. Contact a manager.** That message does not add a Reference line.
+
 Do not use another staff member's login.
 
 ---
