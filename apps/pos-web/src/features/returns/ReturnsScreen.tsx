@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { cashierErrorMessage, formatMoneyLabel, formatOperationalDateTime } from "../../ui/cashier-language";
 import { ReturnFlow } from "./ReturnFlow";
-import { OUTSTANDING_RETURN_COPY, type HistoricReturnSaleView, type ReturnConditionView, type ReturnSessionView } from "./returnView";
+import { type HistoricReturnSaleView, type ReturnConditionView, type ReturnSessionView } from "./returnView";
 
 export type HistoricSaleLookup = {
   search(query: string): Promise<readonly HistoricReturnSaleView[]>;
@@ -138,11 +138,11 @@ export function ReturnsScreen({
           </div>
         ) : null}
         {locked ? (
-          <div className="banner warning" role="alert" data-outstanding-return="">
-            {OUTSTANDING_RETURN_COPY}
-          </div>
+          <p className="muted" data-discovery-collapsed="">
+            Other sales are hidden until this return is checked.
+          </p>
         ) : null}
-        {lookupError ? (
+        {lookupError && !locked ? (
           <div className="banner danger" role="alert">
             {lookupError}
           </div>
@@ -166,7 +166,7 @@ export function ReturnsScreen({
           />
         </div>
       ) : null}
-      {matches.length > 0 ? (
+      {!locked && matches.length > 0 ? (
         <div className="returns-card-grid">
           {matches.map((sale) => (
             <article

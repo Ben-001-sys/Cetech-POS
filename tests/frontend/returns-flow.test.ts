@@ -414,7 +414,8 @@ describe("FE-06 returns", () => {
     expect(html).toContain('data-return-complete="false"');
     expect(html).not.toContain("data-return-complete-banner");
     expect(html).toContain("data-return-unresolved");
-    expect(html).toContain("Payment refund");
+    expect(html).toContain("Refund — Payment — Pending");
+    expect(html).not.toContain("Needs attention");
   });
 
   test("18b mixed return state clearly warns that cash is already refunded", async () => {
@@ -432,15 +433,17 @@ describe("FE-06 returns", () => {
     );
     await controller.execute();
     const html = renderFlow(controller.getSession());
-    expect(html).toContain('data-cash-refund-complete-warning');
-    expect(html).toContain("Cash refund already completed.");
+    expect(html).toContain("Refund — Cash — Completed");
+    expect(html).toContain("Order refund record — Needs attention");
+    expect(html).toContain("Stock handling — Pending");
     expect(html).toContain("Do not refund the customer again");
-    expect(html).toContain('data-order-refund-review');
-    expect(html).toContain("Do not create another Woo order refund");
-    expect(html).toContain('data-stock-update-review');
-    expect(html).toContain("Do not adjust stock manually");
-    expect(html).toContain("return-effect-row");
-    expect(html).toContain("Order refund needs review");
+    expect(html.split("Do not refund the customer again").length - 1).toBe(1);
+    expect(html).not.toContain("Woo");
+    expect(html).not.toContain("commercial refund");
+    expect(html).not.toContain("stock disposition");
+    expect(html).not.toContain("tenant policy");
+    expect(html).toContain("data-return-safety");
+    expect(html).not.toContain("data-return-unresolved");
   });
 
   test("19 completed aggregate is presented only from authoritative completed resolution", async () => {

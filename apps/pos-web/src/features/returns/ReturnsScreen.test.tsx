@@ -74,4 +74,35 @@ describe("Returns discovery", () => {
     expect(html).toContain("Select return items");
   });
 
+  test("a locked return hides other sales so another return cannot be started", () => {
+    const locked = {
+      ...idleReturnSession(),
+      stage: "requires_attention" as const,
+      saleId: sale.saleId,
+      returnId: "ret-1",
+      identityLocked: true,
+      lines: sale.lines.map((line) => ({
+        ...line,
+        quantity: "1",
+        reason: "Damaged",
+        condition: "damaged" as const,
+      })),
+    };
+    const html = renderToStaticMarkup(
+      createElement(ReturnsScreen, {
+        session: locked,
+        inFlight: false,
+        lookup: { async search() { return [sale]; } },
+        matches: [sale],
+        onSelectSale: () => undefined,
+        onUpdateLine: () => undefined,
+        onPreview: () => undefined,
+        onExecute: () => undefined,
+        onResolve: () => undefined,
+      }),
+    );
+    expect(html).toContain("data-discovery-collapsed");
+    expect(html).not.toContain("returns-card-grid");
+    expect(html).toContain("disabled");
+  });
 });

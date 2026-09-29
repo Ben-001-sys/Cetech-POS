@@ -1,8 +1,8 @@
 "use client";
 
 import { formatMoneyDisplay } from "../sell/state/quotePresentation";
-import { orderStatusLabel } from "../../ui/cashier-language";
 import {
+  availableBeforeRequestLabel,
   canPresentReturnComplete,
   conditionLabel,
   conditionRestockNotice,
@@ -10,6 +10,8 @@ import {
   dispositionLabel,
   dispositionPolicyLabel,
   OUTSTANDING_RETURN_COPY,
+  returnProgressLines,
+  returnSafetyCopy,
   unresolvedEffectLabels,
   type ReturnConditionView,
   type ReturnSessionView,
@@ -24,53 +26,23 @@ const CONDITIONS: readonly ReturnConditionView[] = [
   "not_physically_returned",
 ];
 
-function friendlyPending(label: string): string {
-  switch (label) {
-    case "payment refund":
-      return "Payment refund pending";
-    case "cash refund":
-      return "Cash refund pending";
-    case "order refund":
-      return "Order refund needs review";
-    case "stock update":
-      return "Stock update needs attention";
-    default:
-      return label;
-  }
-}
-
 function EffectRow({
-  label,
-  effect,
-  refundIdentity = false,
+  line,
+  status,
+  effectId,
 }: {
-  label: string;
-  effect?: ReturnSessionView["providerRefund"];
-  refundIdentity?: boolean;
+  line: string;
+  status: string;
+  effectId?: string;
 }) {
-  if (!effect) {
-    return null;
-  }
-  const tone =
-    effect.status === "completed"
-      ? "success"
-      : effect.status === "not_required"
-        ? "info"
-        : effect.status === "requires_attention"
-          ? "danger"
-          : "warning";
   return (
     <div
       className="r-row return-effect-row"
-      data-effect-name={label}
-      data-effect-status={effect.status}
-      data-effect-id={effect.effectId ?? ""}
-      data-refund-identity={refundIdentity ? effect.effectId ?? "" : undefined}
+      data-effect-status={status}
+      data-effect-id={effectId ?? ""}
+      data-refund-identity={line.startsWith("Refund —") ? effectId : undefined}
     >
-      <span className="return-effect-label">{label}</span>
-      <span className={`workspace-badge ${tone} return-effect-status`}>
-        {orderStatusLabel(effect.status)}
-      </span>
+      <span className="return-effect-label">{line}</span>
     </div>
   );
 }
@@ -95,6 +67,9 @@ export function ReturnFlow({
   const unresolved = unresolvedEffectLabels(session);
   const locked = session.identityLocked;
   const fieldsDisabled = inFlight || locked;
+  const safety = returnSafetyCopy(session);
+  const progress = returnProgressLines(session);
+  const lockCopyAlreadyShown = (session.message || copy.status).includes(OUTSTANDING_RETURN_COPY);
 
   return (
     <section
@@ -110,7 +85,7 @@ export function ReturnFlow({
       <p className="muted" role="status" aria-live="polite">
         {session.message || copy.status}
       </p>
-      {locked ? (
+      {locked && !lockCopyAlreadyShown ? (
         <div className="banner warning" role="alert" data-outstanding-return="">
           {OUTSTANDING_RETURN_COPY}
         </div>
@@ -122,7 +97,7 @@ export function ReturnFlow({
       ) : null}
       {session.lines.map((line) => {
         const preview = session.previewLines.find((item) => item.orderLineId === line.orderLineId);
-        const safety = conditionRestockNotice(line.condition);
+        const restockNotice = conditionRestockNotice(line.condition);
         return (
           <article key={line.orderLineId} className="card card-pad return-line" data-order-line-id={line.orderLineId}>
             <div className="row between">
@@ -171,12 +146,12 @@ export function ReturnFlow({
                 </select>
               </div>
             </div>
-            {safety ? (
+            {restockNotice ? (
               <div className="banner warning" role="status" data-restock-safety={line.condition}>
-                {safety}
+                {restockNotice}
               </div>
             ) : (
-              <p className="muted">The refund and the stock action are confirmed separately.</p>
+              <p className="muted">The refund and stock handling are confirmed separately.</p>
             )}
             {preview ? (
               <div
@@ -186,17 +161,14 @@ export function ReturnFlow({
                 data-intended-disposition={preview.intendedDisposition}
                 data-disposition-policy={preview.dispositionPolicy}
               >
-                <div>Remaining returnable quantity: {preview.remainingReturnableQuantity}</div>
-                <div>Stock action: {dispositionLabel(preview.intendedDisposition)}</div>
-                <div>Stock rule: {dispositionPolicyLabel(preview.dispositionPolicy)}</div>
-                {preview.intendedDisposition === "no_automatic_restock" ? (
-                  <div className="banner info" role="status">
-                    No automatic restock.
-                  </div>
-                ) : null}
-                {!preview.automaticSellableRestock ? (
-                  <div data-not-automatic-sellable="">Not automatically restocked as sellable.</div>
-                ) : null}
+                <div>{availableBeforeRequestLabel(preview.remainingReturnableQuantity)}</div>
+                <div>
+                  Stock handling: {dispositionLabel(preview.intendedDisposition)}
+                  {dispositionPolicyLabel(preview.dispositionPolicy) === dispositionLabel(preview.intendedDisposition)
+                    ? ""
+                    : `. ${dispositionPolicyLabel(preview.dispositionPolicy)}`}
+                  {preview.intendedDisposition === "no_automatic_restock" ? ". No automatic restock." : ""}
+                </div>
               </div>
             ) : null}
           </article>
@@ -217,42 +189,24 @@ export function ReturnFlow({
           Manager approval recorded.
         </div>
       ) : null}
-      {session.providerRefund || session.cashRefund || session.commercialRefund || session.stockDisposition ? (
+      {progress.length > 0 ? (
         <div className="card card-pad return-effect-card" data-return-effects="">
           <strong>Return progress</strong>
           <div className="return-effect-list">
-          <EffectRow label="Payment refund" effect={session.providerRefund} refundIdentity />
-          <EffectRow label="Cash refund" effect={session.cashRefund} refundIdentity />
-          <EffectRow label="Order refund" effect={session.commercialRefund} />
-          <EffectRow label="Stock update" effect={session.stockDisposition} />
+            {progress.map((row) => (
+              <EffectRow key={row.text} line={row.text} status={row.status} effectId={row.effectId} />
+            ))}
           </div>
-          {session.cashRefund?.status === "completed" && !complete ? (
-            <div className="banner info return-effect-safety" role="status" data-cash-refund-complete-warning="">
-              <strong>Cash refund already completed.</strong>
-              <span>Do not refund the customer again while the order refund or stock update is being checked.</span>
-            </div>
-          ) : null}
-          {session.commercialRefund?.status === "requires_attention" ? (
-            <div className="banner warning return-effect-safety" role="alert" data-order-refund-review="">
-              <strong>Order refund needs review.</strong>
-              <span>Do not create another Woo order refund. A manager or support person must check the existing refund first.</span>
-            </div>
-          ) : null}
-          {(session.stockDisposition?.status === "pending" ||
-            session.stockDisposition?.status === "requires_attention") ? (
-            <div className="banner warning return-effect-safety" role="status" data-stock-update-review="">
-              <strong>Stock update is not settled yet.</strong>
-              <span>Do not adjust stock manually until this return has been checked.</span>
+          {safety ? (
+            <div className="banner warning return-effect-safety" role="alert" data-return-safety="">
+              {safety}
             </div>
           ) : null}
         </div>
       ) : null}
-      {!complete && unresolved.length > 0 ? (
+      {!complete && !safety && unresolved.length > 0 ? (
         <div className="banner warning" role="alert" data-return-unresolved="">
-          {"This return isn't finished yet. Some refund or stock updates are still pending."}
-          <ul>
-            {unresolved.map((label) => <li key={label}>{friendlyPending(label)}</li>)}
-          </ul>
+          This return is not finished yet. Check the progress above before doing anything else.
         </div>
       ) : null}
       {complete ? (
