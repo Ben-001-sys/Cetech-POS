@@ -250,6 +250,8 @@ function ShiftReportActions({
   readonly onChanged?: () => void;
 }) {
   const [report, setReport] = useState<ShiftReport | null>(null);
+  const [reportPhase, setReportPhase] = useState<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  const [reportError, setReportError] = useState<string | null>(null);
   const [movements, setMovements] = useState<readonly ManagementCashMovement[] | null>(null);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -259,13 +261,24 @@ function ShiftReportActions({
   async function loadReport(kind: "X" | "Z") {
     setPending(true);
     setError(null);
+    setReportError(null);
+    setReport(null);
+    setReportPhase("loading");
     const result = await fetchManagementShiftReport(row.shiftId, kind);
     setPending(false);
     if (!result.ok) {
-      setError(result.error.message);
+      setReportPhase("error");
+      setError(null);
+      setReportError(result.error.message || "The shift summary could not be loaded.");
+      return;
+    }
+    if (typeof result.data.expectedCash?.minor !== "number" || !result.data.expectedCash.currency) {
+      setReport(null);
+      setReportPhase("empty");
       return;
     }
     setReport(result.data);
+    setReportPhase("ready");
   }
 
   async function loadMovements() {
@@ -318,13 +331,24 @@ function ShiftReportActions({
           Cash entries
         </button>
       </div>
-      {report ? (
-        <div className="card card-pad" data-management-report={report.kind}>
-          <strong>{report.kind === "Z" ? "Z report" : "X report"}</strong>
-          <p>Expected {formatMoneyLabel(report.expectedCash)}</p>
+      {reportPhase === "loading" ? (
+        <p role="status" data-management-report="loading">Loading the shift summary.</p>
+      ) : null}
+      {reportPhase === "empty" ? (
+        <p role="status" data-management-report="empty">No shift totals are available for this report.</p>
+      ) : null}
+      {reportPhase === "error" ? (
+        <div className="banner danger" role="alert" data-management-report="error">
+          {reportError || "The shift summary could not be loaded."}
+        </div>
+      ) : null}
+      {reportPhase === "ready" && report ? (
+        <div className="card card-pad" data-management-report={report.kind} data-shift-report="ready">
+          <strong>{report.kind === "Z" ? "Z report" : "Shift summary (X report)"}</strong>
+          <p data-report-expected="">Expected {formatMoneyLabel(report.expectedCash)}</p>
           {report.countedCash ? <p>Counted {formatMoneyLabel(report.countedCash)}</p> : null}
           {report.variance ? <p>Variance {formatMoneyLabel({ minor: Math.abs(report.variance.minor), currency: report.variance.currency })}</p> : null}
-          {report.kind === "X" ? <p className="muted">This X report is the live shift. It is not stored as a Z report.</p> : null}
+          {report.kind === "X" ? <p className="muted">This is a live summary. The shift stays open.</p> : null}
         </div>
       ) : null}
       {movements ? (

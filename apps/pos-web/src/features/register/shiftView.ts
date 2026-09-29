@@ -24,6 +24,9 @@ export type ShiftReportView = {
   readonly createdAt: string;
 };
 
+/** How the latest report request should be shown. Idle means none has been asked for. */
+export type ShiftReportPhase = "idle" | "loading" | "ready" | "empty" | "error";
+
 export type ShiftWorkspaceView = {
   readonly status: ShiftStatusView;
   readonly shiftId?: string;
@@ -35,6 +38,7 @@ export type ShiftWorkspaceView = {
   readonly variance?: SignedRegisterMoneyView;
   readonly closedAt?: string;
   readonly report?: ShiftReportView;
+  readonly reportPhase?: ShiftReportPhase;
   readonly message: string;
   readonly inputError?: string;
   readonly closeSucceeded: boolean;

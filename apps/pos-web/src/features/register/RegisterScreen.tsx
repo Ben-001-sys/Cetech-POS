@@ -88,6 +88,36 @@ export function RegisterScreen({
           )}
         </div>
       ) : null}
+      {session.reportPhase === "loading" ? (
+        <section className="card card-pad" data-shift-report="loading" role="status">
+          {session.report?.kind === "Z" || session.status === "closed"
+            ? "Loading the end-of-shift report."
+            : "Loading the shift summary."}
+        </section>
+      ) : null}
+      {session.reportPhase === "empty" ? (
+        <section className="card card-pad" data-shift-report="empty" role="status">
+          No shift totals are available for this report.
+        </section>
+      ) : null}
+      {session.reportPhase === "error" ? (
+        <div className="banner danger" role="alert" data-shift-report="error">
+          {session.message || "The shift summary could not be loaded."}
+        </div>
+      ) : null}
+      {session.report && session.reportPhase === "ready" && session.report.kind === "X" && (session.status === "open" || session.status === "closing") ? (
+        <section className="card card-pad" data-x-report="" data-shift-report="ready">
+          <strong>Shift summary (X report)</strong>
+          <div data-x-expected="">Expected {formatMoneyDisplay(session.report.expectedCash)}</div>
+          {session.report.countedCash ? (
+            <div>Counted {formatMoneyDisplay(session.report.countedCash)}</div>
+          ) : null}
+          {session.report.variance ? (
+            <div>Variance {formatSignedMoneyDisplay(session.report.variance)}</div>
+          ) : null}
+          <p className="muted">This is a live summary. The shift stays open.</p>
+        </section>
+      ) : null}
       {showClosed ? (
         <section className="card card-pad" data-shift-closed="">
           <div className="banner success" role="status">
@@ -108,7 +138,7 @@ export function RegisterScreen({
           ) : null}
         </section>
       ) : null}
-      {session.report && session.status === "closed" && session.report.kind === "Z" ? (
+      {session.report && session.status === "closed" && session.report.kind === "Z" && session.reportPhase !== "loading" && session.reportPhase !== "error" && session.reportPhase !== "empty" ? (
         <section className="card card-pad" data-z-report="">
           <strong>End-of-shift report (Z report)</strong>
           <div>Expected {formatMoneyDisplay(session.report.expectedCash)}</div>

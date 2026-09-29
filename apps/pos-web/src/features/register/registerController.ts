@@ -72,6 +72,7 @@ function viewFromShift(shift: Shift | null, extras: Partial<ShiftWorkspaceView> 
     variance: shift.variance,
     closedAt: shift.closedAt,
     report: extras.report,
+    reportPhase: extras.reportPhase,
     message: extras.message ?? (status === "requires_attention"
       ? "This shift needs manager review. It is not closed."
       : status === "closed"
@@ -288,34 +289,53 @@ export function createRegisterController(ports: RegisterWorkspacePorts) {
         return;
       }
       commandLock = true;
+      const baseline = session;
+      setSession({
+        ...baseline,
+        report: undefined,
+        reportPhase: "loading",
+        message: kind === "Z" ? "Loading the end-of-shift report." : "Loading the shift summary.",
+      });
       try {
-        const outcome = await settle(() => ports.register.report(session.shiftId!, kind));
+        const outcome = await settle(() => ports.register.report(baseline.shiftId!, kind));
         if (outcome.kind === "result" && outcome.value.ok) {
           const report: ShiftReport = outcome.value.data;
+          const hasTotals = typeof report.expectedCash?.minor === "number" && Boolean(report.expectedCash.currency);
           setSession({
-            ...session,
-            countedCash: session.status === "closed" ? report.countedCash ?? session.countedCash : session.countedCash,
-            variance: session.status === "closed" ? report.variance ?? session.variance : session.variance,
-            expectedCash: session.status === "closed" ? report.expectedCash : session.expectedCash,
-            report: {
-              id: report.id,
-              kind: report.kind,
-              expectedCash: report.expectedCash,
-              countedCash: report.countedCash,
-              variance: report.variance,
-              createdAt: report.createdAt,
-            },
-            message: kind === "Z" ? "Z report loaded from the register service." : "X report loaded from the register service.",
+            ...baseline,
+            countedCash: baseline.status === "closed" ? report.countedCash ?? baseline.countedCash : baseline.countedCash,
+            variance: baseline.status === "closed" ? report.variance ?? baseline.variance : baseline.variance,
+            expectedCash: baseline.status === "closed" ? report.expectedCash : baseline.expectedCash,
+            report: hasTotals
+              ? {
+                  id: report.id,
+                  kind: report.kind,
+                  expectedCash: report.expectedCash,
+                  countedCash: report.countedCash,
+                  variance: report.variance,
+                  createdAt: report.createdAt,
+                }
+              : undefined,
+            reportPhase: hasTotals ? "ready" : "empty",
+            message: hasTotals
+              ? kind === "Z"
+                ? "End-of-shift report is ready."
+                : "Shift summary is ready. The shift stays open."
+              : "No shift totals are available for this report.",
           });
           return;
         }
-        if (outcome.kind === "unknown") {
-          setSession({ ...session, message: outcome.message });
-          return;
-        }
-        if (outcome.kind === "result" && !outcome.value.ok) {
-          setSession({ ...session, message: cashierErrorMessage(outcome.value.error, "register") });
-        }
+        const message = outcome.kind === "unknown"
+          ? outcome.message
+          : outcome.kind === "result" && !outcome.value.ok
+            ? cashierErrorMessage(outcome.value.error, "register")
+            : "The shift summary could not be loaded.";
+        setSession({
+          ...baseline,
+          report: undefined,
+          reportPhase: "error",
+          message,
+        });
       } finally {
         commandLock = false;
         notify();
