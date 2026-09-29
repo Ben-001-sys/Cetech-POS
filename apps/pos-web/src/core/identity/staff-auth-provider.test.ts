@@ -73,4 +73,33 @@ describe("supabase password grant classification", () => {
       kind: "provider_unavailable",
     });
   });
+
+  test("a timed-out password grant is a support failure with one reference", async () => {
+    let signal: AbortSignal | undefined;
+    const reports: string[] = [];
+    const provider = createPublicSupabaseStaffAuthProvider({
+      env: ENV,
+      fetchImpl: async (_url, init) => {
+        const headers = new Headers(init?.headers);
+        if (headers.get("x-cetech-sign-in-report") === "1") {
+          reports.push(headers.get("x-correlation-id") ?? "");
+          return jsonResponse(200, {});
+        }
+        signal = init?.signal ?? undefined;
+        throw new DOMException("timed out", "TimeoutError");
+      },
+    });
+    let thrown: unknown;
+    try {
+      await provider.signIn({ email: "cashier@example.com", password: "secret" });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      kind: "provider_unavailable",
+      correlationId: reports[0],
+    });
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(reports).toHaveLength(1);
+  });
 });

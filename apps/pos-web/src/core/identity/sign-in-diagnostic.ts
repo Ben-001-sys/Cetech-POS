@@ -1,7 +1,12 @@
 /**
  * Support classification for a failed staff sign-in.
  * The record is safe to log or show on an authorized system-health screen.
- * It never carries an email, password, bearer token, access token, or service-role secret.
+ * It never carries an email, password, bearer token, access token, service-role secret, or invitation token.
+ *
+ * `recentStaffSignInDiagnostics()` is the current process only. It is not a
+ * durable store and it is not shared across Vercel instances. The canonical
+ * cross-instance lookup is the structured `staff_sign_in_diagnostic` log,
+ * keyed by `correlationId`.
  */
 
 export const STAFF_SIGN_IN_DIAGNOSTIC_REASONS = [
@@ -20,12 +25,17 @@ export type StaffSignInDiagnosticCategory = "identity_provider" | "bff_session";
 
 export type StaffSignInHttpStatusClass = "none" | "2xx" | "4xx" | "5xx";
 
-export type StaffSignInDiagnostic = {
+export type StaffSignInDiagnosticDraft = {
   readonly correlationId: string;
   readonly category: StaffSignInDiagnosticCategory;
   readonly httpStatusClass: StaffSignInHttpStatusClass;
   readonly reason: StaffSignInDiagnosticReason;
   readonly sessionStoreReached: boolean;
+};
+
+export type StaffSignInDiagnostic = StaffSignInDiagnosticDraft & {
+  /** Server clock. A client report cannot choose this value. */
+  readonly createdAt: string;
 };
 
 const SECRET_PATTERN = /password|bearer |access[_ ]?token|service[_-]?role|@/i;
@@ -83,7 +93,7 @@ export function diagnosticFromVerifier(input: {
   readonly correlationId: string;
   readonly reason: string;
   readonly httpStatus?: number;
-}): StaffSignInDiagnostic | null {
+}): StaffSignInDiagnosticDraft | null {
   const reason = classifyVerifierDiagnostic(input.reason);
   if (!reason) return null;
   return {
@@ -95,7 +105,7 @@ export function diagnosticFromVerifier(input: {
   };
 }
 
-export function sessionStoreDiagnostic(correlationId: string): StaffSignInDiagnostic {
+export function sessionStoreDiagnostic(correlationId: string): StaffSignInDiagnosticDraft {
   return {
     correlationId,
     category: "bff_session",
@@ -105,7 +115,7 @@ export function sessionStoreDiagnostic(correlationId: string): StaffSignInDiagno
   };
 }
 
-export function runtimeNotConfiguredDiagnostic(correlationId: string): StaffSignInDiagnostic {
+export function runtimeNotConfiguredDiagnostic(correlationId: string): StaffSignInDiagnosticDraft {
   return {
     correlationId,
     category: "bff_session",
@@ -119,7 +129,7 @@ export function runtimeNotConfiguredDiagnostic(correlationId: string): StaffSign
  * Accepts only the enumerated report. Any secret-shaped text, or any field
  * other than reason / httpStatus / category, is refused.
  */
-export function acceptStaffSignInReport(body: unknown, correlationId: string): StaffSignInDiagnostic | null {
+export function acceptStaffSignInReport(body: unknown, correlationId: string): StaffSignInDiagnosticDraft | null {
   if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
   const record = body as Record<string, unknown>;
   const keys = Object.keys(record);
@@ -150,12 +160,23 @@ export function acceptStaffSignInReport(body: unknown, correlationId: string): S
 const recent: StaffSignInDiagnostic[] = [];
 const LIMIT = 20;
 
-export function recordStaffSignInDiagnostic(diagnostic: StaffSignInDiagnostic): void {
-  const serialized = JSON.stringify(diagnostic);
+export function recordStaffSignInDiagnostic(
+  diagnostic: StaffSignInDiagnosticDraft,
+  now: () => Date = () => new Date(),
+): void {
+  const recorded: StaffSignInDiagnostic = {
+    correlationId: diagnostic.correlationId,
+    category: diagnostic.category,
+    httpStatusClass: diagnostic.httpStatusClass,
+    reason: diagnostic.reason,
+    sessionStoreReached: diagnostic.sessionStoreReached,
+    createdAt: now().toISOString(),
+  };
+  const serialized = JSON.stringify(recorded);
   if (SECRET_PATTERN.test(serialized)) return;
-  recent.push(diagnostic);
+  recent.push(recorded);
   if (recent.length > LIMIT) recent.shift();
-  console.info(JSON.stringify({ event: "staff_sign_in_diagnostic", ...diagnostic }));
+  console.info(JSON.stringify({ event: "staff_sign_in_diagnostic", ...recorded }));
 }
 
 export function recentStaffSignInDiagnostics(): readonly StaffSignInDiagnostic[] {

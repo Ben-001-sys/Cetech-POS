@@ -608,6 +608,7 @@ export function PosRuntime({
           noticeState={authNotice}
           busy={authority.status === "restoring"}
           errorMessage={undefined}
+          supportReference={authority.supportReference}
           onSignIn={(request) => {
             void runtime.signIn(request);
           }}

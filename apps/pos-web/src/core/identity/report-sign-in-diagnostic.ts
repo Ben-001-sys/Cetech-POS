@@ -4,21 +4,22 @@ import type {
 } from "./sign-in-diagnostic";
 
 /**
- * Browser-only report of a sign-in failure. The body is the reason enum,
- * an optional HTTP status, and the category. No credentials are accepted.
+ * Browser report of a sign-in failure. The correlation id is the one already
+ * chosen for that attempt. This function never mints a replacement.
+ * The body is the reason enum, an optional HTTP status, and the category.
  */
 export function reportStaffSignInDiagnostic(input: {
+  readonly correlationId: string;
   readonly reason: StaffSignInDiagnosticReason;
   readonly httpStatus?: number;
   readonly category: StaffSignInDiagnosticCategory;
+  readonly fetchImpl?: typeof fetch;
 }): void {
-  const correlationId = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : "00000000-0000-4000-8000-000000000000";
-  if (typeof window === "undefined") {
-    return;
-  }
-  void fetch("/api/pos/v1/session", {
+  const correlationId = input.correlationId.trim();
+  if (!correlationId) return;
+  const fetchImpl = input.fetchImpl ?? (typeof window === "undefined" ? undefined : fetch);
+  if (!fetchImpl) return;
+  void fetchImpl("/api/pos/v1/session", {
     method: "POST",
     credentials: "include",
     headers: {

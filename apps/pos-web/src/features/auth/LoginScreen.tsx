@@ -27,6 +27,7 @@ export type LoginScreenProps = {
   noticeState?: AuthNoticeState;
   busy?: boolean;
   errorMessage?: string;
+  supportReference?: string;
   onSignIn?: (request: LoginCredentials) => void;
 };
 
@@ -92,6 +93,7 @@ export function LoginScreen({
   noticeState = "signed_out",
   busy = false,
   errorMessage,
+  supportReference,
   onSignIn,
 }: LoginScreenProps) {
   const loading = busy || noticeState === "loading";
@@ -134,6 +136,9 @@ export function LoginScreen({
               <span> {notice.body}</span>
             </div>
           </div>
+        ) : null}
+        {supportReference ? (
+          <p className="muted" data-support-reference="">Reference {supportReference}</p>
         ) : null}
         {errorMessage ? (
           <div className="banner danger" role="alert">

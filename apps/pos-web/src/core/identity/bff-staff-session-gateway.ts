@@ -102,7 +102,12 @@ export function createBffStaffSessionGateway(
       }
       return { ok: true, data: parsed, correlationId: body.correlationId };
     } catch {
-      reportStaffSignInDiagnostic({ reason: "transport_failed", category: "bff_session" });
+      reportStaffSignInDiagnostic({
+        correlationId: correlation,
+        reason: "transport_failed",
+        category: "bff_session",
+        fetchImpl,
+      });
       return unavailable(correlation, "staff session transport failed");
     }
   }

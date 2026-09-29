@@ -51,4 +51,22 @@ describe("BFF staff session gateway", () => {
       expect(result.error.details?.field).toBe("assignments");
     }
   });
+
+  test("a transport failure reports the same correlation the request used", async () => {
+    const reports: string[] = [];
+    const gateway = createBffStaffSessionGateway({
+      correlationId: () => CORRELATION,
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        if (headers.get("x-cetech-sign-in-report") === "1") {
+          reports.push(headers.get("x-correlation-id") ?? "");
+          return new Response("{}", { status: 200 });
+        }
+        throw new TypeError("socket hang up");
+      }) as typeof fetch,
+    });
+    const result = await gateway.establish("synthetic-access-token");
+    expect(result.correlationId).toBe(CORRELATION);
+    expect(reports).toEqual([CORRELATION]);
+  });
 });

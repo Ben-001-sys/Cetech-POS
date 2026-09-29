@@ -125,6 +125,7 @@ Do not mark a blocked test as PASS.
 **Expected:**
 - sign-in is rejected;
 - message is understandable;
+- the main message stays the ordinary wrong-password wording and does not add a Reference line;
 - no technical/server error is shown as the main message;
 - no account access is granted.
 

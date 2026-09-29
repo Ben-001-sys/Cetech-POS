@@ -104,6 +104,9 @@ If you see:
 - **Session expired** — sign in again. Your safe local cart should remain available.
 - **Access denied** — your account is not authorized for that register/location. Ask a manager.
 - **Register locked** — sign in to continue the existing shift.
+- **Sign-in unavailable** — try again. A **Reference** line under that notice is a support id. Read it to a manager. It is not a password.
+
+A wrong email or password stays **Incorrect email or password.** That message does not add a Reference line.
 
 Do not use another staff member's login.
 

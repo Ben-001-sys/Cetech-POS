@@ -110,8 +110,9 @@ function SignInDiagnostics({
       <h2>Recent sign-in checks</h2>
       <ul className="stack">
         {rows.map((row) => (
-          <li key={`${row.correlationId}-${row.reason}`} data-sign-in-reason={row.reason}>
+          <li key={`${row.correlationId}-${row.createdAt}`} data-sign-in-reason={row.reason}>
             <p>{SIGN_IN_REASON_COPY[row.reason]}</p>
+            <p className="muted">Checked {formatOperationalDateTime(row.createdAt)}</p>
             <p className="muted">Reference {row.correlationId}</p>
             <p className="muted">
               {row.reason}

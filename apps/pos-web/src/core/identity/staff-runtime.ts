@@ -38,6 +38,8 @@ export type StaffRuntimeAuthority = {
   readonly errorMessage?: string;
   /** Classified cashier notice. UI renders this instead of errorMessage. */
   readonly presentationNotice?: StaffPresentationNotice;
+  /** Safe support reference for this sign-in attempt. Never a credential. */
+  readonly supportReference?: string;
   readonly presentationOnly?: boolean;
   readonly mustChangePassword?: boolean;
   /** ISO time of the last server verification. Present only for cached offline presentation. */
@@ -514,6 +516,7 @@ export function createStaffRuntimeController(input: {
         status: noticeFromFailure(result),
         errorMessage: result.error.message,
         presentationNotice: presentationNoticeForFailure(result),
+        supportReference: result.correlationId,
       });
       return;
     }
@@ -602,7 +605,7 @@ export function createStaffRuntimeController(input: {
         return;
       }
       const epochAtStart = ++authorityEpoch;
-      setState({ ...state, status: "restoring", errorMessage: undefined, presentationNotice: undefined });
+      setState({ ...state, status: "restoring", errorMessage: undefined, presentationNotice: undefined, supportReference: undefined });
       try {
         const signedIn = await input.auth.signIn(request);
         const established = await input.gateway.establish(signedIn.accessToken);
@@ -610,11 +613,13 @@ export function createStaffRuntimeController(input: {
       } catch (error) {
         if (epochAtStart !== authorityEpoch) return;
         const kind = error instanceof StaffAuthError ? error.kind : "provider_unavailable";
+        const supportReference = error instanceof StaffAuthError ? error.correlationId : undefined;
         setState({
           ...idle,
           status: kind === "access_disabled" ? "unauthorized" : "signed_out",
           errorMessage: error instanceof Error ? error.message : "staff identity could not be verified",
           presentationNotice: noticeForAuthFailure(kind),
+          supportReference,
         });
       }
     },
