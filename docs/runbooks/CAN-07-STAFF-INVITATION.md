@@ -4,7 +4,7 @@ Application code sends invitations through the existing admin path:
 
 `POST /api/pos/v1/admin/staff/invite` → `StaffIdentityAdminStore.invite` → Supabase Auth `POST /auth/v1/invite`.
 
-The server adds `redirect_to={APP_ORIGIN}/auth/invite`. The request body cannot choose that address. Staging and production require an explicit `https` `APP_ORIGIN` that is not localhost. A one-off `VERCEL_URL` deployment hash is not an invitation destination. If the origin is missing or unsafe, the invitation is not sent.
+The server adds `redirect_to={APP_ORIGIN}/auth/invite`. The request body cannot choose that address. Staging and production require an explicit `https` `APP_ORIGIN` that is not localhost. `APP_ORIGIN` and `NEXT_PUBLIC_APP_ORIGIN` must be that root origin only: no username, password, path, query, or hash. A path such as `https://pos.example.com/some/path` is rejected and is not trimmed back to the host. A one-off `VERCEL_URL` deployment hash is not an invitation destination. If the origin is missing or unsafe, the invitation is not sent.
 
 Accepting the invitation at `/auth/invite` only lets the invited person set a password. It does not create a POS role, register assignment, or organization control membership. POS access stays disabled until an owner or admin assigns it. The person then uses ordinary POS sign-in.
 

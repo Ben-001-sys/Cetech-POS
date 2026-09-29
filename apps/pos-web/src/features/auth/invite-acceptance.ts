@@ -43,6 +43,49 @@ export function phaseForInviteMaterial(material: InviteMaterial): InviteAcceptan
   return "ready";
 }
 
+export type HeldInviteMaterial = {
+  readonly material: InviteMaterial;
+  readonly nextPath: string;
+};
+
+/**
+ * One browser invitation is captured once. React Strict Mode runs setup,
+ * cleanup, and setup again; the second setup must reuse this capture instead
+ * of reading the cleaned URL.
+ */
+let heldInvite: HeldInviteMaterial | null = null;
+let inviteHolders = 0;
+
+export function acquireInviteMaterial(
+  readLocation: () => { readonly pathname: string; readonly search: string; readonly hash: string },
+): HeldInviteMaterial {
+  inviteHolders += 1;
+  if (heldInvite) return heldInvite;
+  const consumed = consumeInviteLocation(readLocation());
+  heldInvite = { material: consumed.material, nextPath: consumed.nextPath };
+  return heldInvite;
+}
+
+export function releaseInviteMaterialHolder(): void {
+  inviteHolders = Math.max(0, inviteHolders - 1);
+  queueMicrotask(() => {
+    if (inviteHolders === 0) retireInviteMaterial();
+  });
+}
+
+export function retireInviteMaterial(): void {
+  heldInvite = null;
+}
+
+export function resetInviteMaterialForTests(): void {
+  heldInvite = null;
+  inviteHolders = 0;
+}
+
+export function inviteMaterialIsSecret(material: InviteMaterial): boolean {
+  return material.kind === "session" || material.kind === "verify" || material.kind === "verify_token";
+}
+
 export type InviteAcceptanceResult =
   | { readonly ok: true }
   | {

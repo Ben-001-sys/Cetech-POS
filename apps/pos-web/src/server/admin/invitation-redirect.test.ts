@@ -23,13 +23,32 @@ describe("staff invitation redirect", () => {
   test("staging uses the explicit https origin and ignores a Vercel deployment hash", () => {
     const resolved = resolveStaffInvitationRedirect({
       APP_ENV: "staging",
-      APP_ORIGIN: "https://pos-staging.example.com/ignored",
+      APP_ORIGIN: "https://pos-staging.example.com",
       VERCEL_URL: "cetech-pos-staging-abc123.vercel.app",
     });
     expect(resolved).toEqual({
       ok: true,
       redirectTo: "https://pos-staging.example.com/auth/invite",
     });
+  });
+
+  test("a configured origin must be a root and is not silently trimmed", () => {
+    expect(resolveStaffInvitationRedirect({
+      APP_ENV: "staging",
+      APP_ORIGIN: "https://pos-staging.example.com/some/path",
+    })).toEqual({ ok: false, reason: "malformed_origin" });
+    expect(resolveStaffInvitationRedirect({
+      APP_ENV: "staging",
+      APP_ORIGIN: "https://pos-staging.example.com/?next=/admin",
+    })).toEqual({ ok: false, reason: "malformed_origin" });
+    expect(resolveStaffInvitationRedirect({
+      APP_ENV: "staging",
+      APP_ORIGIN: "https://pos-staging.example.com/#invite",
+    })).toEqual({ ok: false, reason: "malformed_origin" });
+    expect(resolveStaffInvitationRedirect({
+      APP_ENV: "local",
+      APP_ORIGIN: "http://localhost:3000/pos",
+    })).toEqual({ ok: false, reason: "malformed_origin" });
   });
 
   test("a deployed environment without an explicit origin fails closed", () => {
@@ -50,7 +69,7 @@ describe("staff invitation redirect", () => {
     })).toEqual({ ok: false, reason: "localhost_prohibited" });
     expect(resolveStaffInvitationRedirect({
       APP_ENV: "staging",
-      APP_ORIGIN: "https://localhost/auth/invite",
+      APP_ORIGIN: "https://localhost",
     })).toEqual({ ok: false, reason: "localhost_prohibited" });
     expect(resolveStaffInvitationRedirect({
       APP_ENV: "staging",

@@ -59,9 +59,9 @@ export function InviteAcceptanceScreen({
             <Link className="btn primary" href="/">Sign in</Link>
           </>
         ) : null}
-        {phase === "ready" ? (
+        {phase === "ready" || phase === "unavailable" ? (
           <>
-            <p className="subtle">{READY_INVITE_COPY}</p>
+            {phase === "ready" ? <p className="subtle">{READY_INVITE_COPY}</p> : null}
             {errorMessage ? <div className="banner danger" role="alert">{errorMessage}</div> : null}
             {localError ? <div className="banner danger" role="alert">{localError}</div> : null}
             <form className="auth-actions stack" onSubmit={handleSubmit}>
@@ -91,7 +91,7 @@ export function InviteAcceptanceScreen({
                 {visible ? "Hide password" : "Show password"}
               </button>
               <button className="btn primary" type="submit" disabled={busy}>
-                {busy ? "Saving…" : "Save password"}
+                {busy ? "Saving…" : phase === "unavailable" ? "Try again" : "Save password"}
               </button>
             </form>
           </>

@@ -46,6 +46,7 @@ export function resolveStaffInvitationRedirect(
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     return { ok: false, reason: "malformed_origin" };
   }
+  if (!isRootOrigin(parsed)) return { ok: false, reason: "malformed_origin" };
 
   const local = isLoopbackHost(parsed.hostname);
   if (deployed) {
@@ -89,6 +90,11 @@ export function invitationRedirectFailureMessage(reason: InvitationRedirectFailu
     case "localhost_prohibited":
       return "Staff invitations on a deployed environment cannot use a localhost address.";
   }
+}
+
+function isRootOrigin(parsed: URL): boolean {
+  if (parsed.search || parsed.hash) return false;
+  return parsed.pathname === "" || parsed.pathname === "/";
 }
 
 function isLoopbackHost(hostname: string): boolean {
