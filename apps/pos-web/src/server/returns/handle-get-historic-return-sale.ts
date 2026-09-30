@@ -6,12 +6,14 @@ import { apiFailure } from "../http/api-failure";
 import type { StaffSessionStore } from "../auth/session-store";
 import { httpStatusFor } from "../http/status";
 import type { CheckoutStore, PosSaleRecord } from "../../core/checkout/types";
+import type { ReturnStore } from "../../core/returns/types";
 import { authorizeCheckoutRead } from "../sales/authorize-checkout";
 import { guardStaffCommand, type CommandHttpHeaders } from "../sales/guard-staff-command";
 import {
   projectHistoricReturnSale,
   type HistoricReturnSaleProjection,
 } from "./historic-sale-projection";
+import { getUnresolvedReturnForSale } from "./unresolved-return-store";
 
 export async function handleGetHistoricReturnSale(input: {
   readonly correlationIdHeader?: string;
@@ -24,6 +26,7 @@ export async function handleGetHistoricReturnSale(input: {
   readonly sessionStore: StaffSessionStore;
   readonly allowedOrigins: readonly string[];
   readonly checkoutStore: CheckoutStore;
+  readonly returnStore: ReturnStore;
   readonly assignments: StaffAssignmentDirectory;
 }): Promise<{
   readonly status: number;
@@ -71,7 +74,25 @@ export async function handleGetHistoricReturnSale(input: {
     const body = apiFailure("NOT_FOUND", "completed sale was not found", guard.correlationId);
     return { status: httpStatusFor(body.error.code), body, headers: guard.headers };
   }
-  const projection = projectHistoricReturnSale(sale);
+
+  let existingReturn;
+  try {
+    existingReturn = await getUnresolvedReturnForSale(
+      input.returnStore,
+      sale.organizationId,
+      sale.prepared.saleId,
+      input.now.toISOString(),
+    );
+  } catch {
+    const body = apiFailure(
+      "INTEGRATION_UNAVAILABLE",
+      "existing return status is unavailable",
+      guard.correlationId,
+    );
+    return { status: httpStatusFor(body.error.code), body, headers: guard.headers };
+  }
+
+  const projection = projectHistoricReturnSale(sale, existingReturn);
   if (!projection) {
     const body = apiFailure(
       "REQUIRES_ATTENTION",

@@ -19,6 +19,7 @@ import {
 } from "../../core/returns/quantities";
 import type { ReturnStore, StoredRequestedReturnLine, StoredReturnRecord } from "../../core/returns/types";
 import { economicsVersionFromPreparedSale, returnFingerprintFor } from "./fingerprint";
+import { getUnresolvedReturnForSale } from "./unresolved-return-store";
 
 const PREVIEW_TTL_MS = 30 * 60 * 1000;
 
@@ -38,6 +39,31 @@ export async function previewReturn(input: {
   if (sale.organizationId !== input.actor.organizationId || !input.actor.locationIds.includes(sale.locationId)) {
     return apiFailure("FORBIDDEN", "sale is outside staff scope", input.correlationId);
   }
+
+  let unresolvedReturn;
+  try {
+    unresolvedReturn = await getUnresolvedReturnForSale(
+      input.returnStore,
+      sale.organizationId,
+      sale.prepared.saleId,
+      input.now.toISOString(),
+    );
+  } catch {
+    return apiFailure(
+      "INTEGRATION_UNAVAILABLE",
+      "existing return status is unavailable",
+      input.correlationId,
+    );
+  }
+  if (unresolvedReturn) {
+    return apiFailure(
+      "OPERATION_IN_PROGRESS",
+      "This sale already has an unresolved return. Check the existing return before starting another.",
+      input.correlationId,
+      { operationId: unresolvedReturn.returnId },
+    );
+  }
+
   const orderLines = sale.orderLines;
   if (!orderLines || orderLines.length === 0) {
     return apiFailure("REQUIRES_ATTENTION", "sale is missing immutable order line identities", input.correlationId);

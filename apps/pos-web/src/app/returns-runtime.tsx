@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { ReturnsScreen, useReturnFlow, type HistoricSaleLookup } from "../features/returns";
+import type { ExistingReturnView, HistoricReturnSaleWithExisting } from "../features/returns/existingReturn";
 import type { HistoricReturnSaleView } from "../features/returns/returnView";
 import type { ReturnPort } from "../../../../docs/contracts/ports";
 import { createBrowserReturnPort } from "./checkout-client";
@@ -27,7 +28,7 @@ export function ReturnsRuntimeScreen({
     void lookup.search(initialSaleId).then((matches) => {
       const sale = matches.find((row) => row.saleId === initialSaleId || row.orderReference === initialSaleId);
       if (sale) {
-        flow.controller?.selectSale(sale);
+        void flow.controller?.selectSale(sale);
       }
     });
   }, [flow.controller, initialSaleId, lookup]);
@@ -41,7 +42,7 @@ export function ReturnsRuntimeScreen({
       inFlight={flow.inFlight}
       lookup={lookup}
       onSelectSale={(sale) => {
-        flow.controller?.selectSale(sale);
+        void flow.controller?.selectSale(sale);
         onSaleSelected?.(sale.saleId);
       }}
       onUpdateLine={(orderLineId, patch) => flow.controller?.updateLine(orderLineId, patch)}
@@ -98,7 +99,7 @@ export function createBrowserHistoricReturnSaleLookup(
         if (lines.length === 0) {
           return [];
         }
-        const view: HistoricReturnSaleView = {
+        const view: HistoricReturnSaleWithExisting = {
           saleId: item.saleId ?? item.id,
           orderReference: item.orderReference,
           currency: item.total.currency,
@@ -114,7 +115,10 @@ export function createBrowserHistoricReturnSaleLookup(
   };
 }
 
-async function fetchHistoricByKey(fetchImpl: typeof fetch, saleKey: string): Promise<readonly HistoricReturnSaleView[]> {
+async function fetchHistoricByKey(
+  fetchImpl: typeof fetch,
+  saleKey: string,
+): Promise<readonly HistoricReturnSaleWithExisting[]> {
   const response = await fetchImpl(`/api/pos/v1/returns/history/${encodeURIComponent(saleKey)}`, {
     method: "GET",
     credentials: "include",
@@ -123,6 +127,12 @@ async function fetchHistoricByKey(fetchImpl: typeof fetch, saleKey: string): Pro
       "x-csrf-token": readCookie("cetech_pos_csrf") ?? "",
     },
   });
+  if (!response.ok) {
+    if (response.status === 404) {
+      return [];
+    }
+    throw new Error("Existing return status could not be checked. Try again before starting a return.");
+  }
   const json = (await response.json()) as {
     readonly ok?: boolean;
     readonly data?: {
@@ -138,6 +148,22 @@ async function fetchHistoricByKey(fetchImpl: typeof fetch, saleKey: string): Pro
         readonly name?: string;
         readonly originalSoldQuantity?: string;
       }>;
+      readonly existingReturn?: {
+        readonly returnId?: string;
+        readonly status?: ExistingReturnView["status"];
+        readonly refundTotal?: { readonly minor?: number; readonly currency?: string };
+        readonly lines?: ReadonlyArray<{
+          readonly orderLineId?: string;
+          readonly name?: string;
+          readonly originalSoldQuantity?: string;
+          readonly quantity?: string;
+          readonly reason?: string;
+          readonly condition?: ExistingReturnView["lines"][number]["condition"];
+          readonly intendedDisposition?: ExistingReturnView["lines"][number]["intendedDisposition"];
+          readonly dispositionPolicy?: ExistingReturnView["lines"][number]["dispositionPolicy"];
+          readonly remainingReturnableQuantity?: string;
+        }>;
+      };
     };
   };
   if (!json.ok || !json.data?.saleId || !json.data.lines || json.data.lines.length === 0) {
@@ -158,21 +184,89 @@ async function fetchHistoricByKey(fetchImpl: typeof fetch, saleKey: string): Pro
   if (lines.length === 0) {
     return [];
   }
-  return [
-    {
-      saleId: json.data.saleId,
-      orderReference: json.data.orderReference ?? json.data.saleId,
-      currency: json.data.currency ?? "GHS",
-      customerLabel: json.data.customerLabel,
-      createdAt: json.data.createdAt,
-      total:
-        json.data.total && typeof json.data.total.minor === "number" && typeof json.data.total.currency === "string"
-          ? { minor: json.data.total.minor, currency: json.data.total.currency }
-          : undefined,
-      itemSummary: json.data.itemSummary,
-      lines,
-    },
-  ];
+  const existingReturn = parseExistingReturn(json.data.existingReturn);
+  const view: HistoricReturnSaleView = {
+    saleId: json.data.saleId,
+    orderReference: json.data.orderReference ?? json.data.saleId,
+    currency: json.data.currency ?? "GHS",
+    customerLabel: json.data.customerLabel,
+    createdAt: json.data.createdAt,
+    total:
+      json.data.total && typeof json.data.total.minor === "number" && typeof json.data.total.currency === "string"
+        ? { minor: json.data.total.minor, currency: json.data.total.currency }
+        : undefined,
+    itemSummary: json.data.itemSummary,
+    lines,
+  };
+  return [{ ...view, ...(existingReturn ? { existingReturn } : {}) }];
+}
+
+function parseExistingReturn(
+  input:
+    | {
+        readonly returnId?: string;
+        readonly status?: ExistingReturnView["status"];
+        readonly refundTotal?: { readonly minor?: number; readonly currency?: string };
+        readonly lines?: ReadonlyArray<{
+          readonly orderLineId?: string;
+          readonly name?: string;
+          readonly originalSoldQuantity?: string;
+          readonly quantity?: string;
+          readonly reason?: string;
+          readonly condition?: ExistingReturnView["lines"][number]["condition"];
+          readonly intendedDisposition?: ExistingReturnView["lines"][number]["intendedDisposition"];
+          readonly dispositionPolicy?: ExistingReturnView["lines"][number]["dispositionPolicy"];
+          readonly remainingReturnableQuantity?: string;
+        }>;
+      }
+    | undefined,
+): ExistingReturnView | undefined {
+  if (!input) {
+    return undefined;
+  }
+  if (
+    !input.returnId ||
+    (input.status !== "refund_pending" && input.status !== "in_progress" && input.status !== "requires_attention") ||
+    typeof input.refundTotal?.minor !== "number" ||
+    typeof input.refundTotal.currency !== "string" ||
+    !input.lines
+  ) {
+    throw new Error("Existing return details are incomplete. Do not start another return.");
+  }
+  const lines = input.lines.flatMap((line) => {
+    if (
+      !line.orderLineId ||
+      !line.originalSoldQuantity ||
+      !line.quantity ||
+      !line.reason ||
+      !line.condition ||
+      !line.intendedDisposition ||
+      !line.dispositionPolicy ||
+      !line.remainingReturnableQuantity
+    ) {
+      return [];
+    }
+    return [{
+      orderLineId: line.orderLineId,
+      name: line.name || `Sale line ${line.orderLineId}`,
+      originalSoldQuantity: line.originalSoldQuantity,
+      quantity: line.quantity,
+      reason: line.reason,
+      condition: line.condition,
+      intendedDisposition: line.intendedDisposition,
+      dispositionPolicy: line.dispositionPolicy,
+      remainingReturnableQuantity: line.remainingReturnableQuantity,
+    }];
+  });
+  if (lines.length !== input.lines.length) {
+    throw new Error("Existing return details are incomplete. Do not start another return.");
+  }
+  return {
+    returnId: input.returnId,
+    status: input.status,
+    refundTotal: { minor: input.refundTotal.minor, currency: input.refundTotal.currency },
+    lines,
+  };
 }
 
 function readCookie(name: string): string | null {

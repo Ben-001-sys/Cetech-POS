@@ -2,6 +2,12 @@ export { createReturnController, type ReturnController, type ReturnControllerPor
 export { ReturnFlow } from "./ReturnFlow";
 export { ReturnsScreen, type HistoricSaleLookup } from "./ReturnsScreen";
 export { useReturnFlow } from "./useReturnFlow";
+export type {
+  ExistingReturnLineView,
+  ExistingReturnStatusView,
+  ExistingReturnView,
+  HistoricReturnSaleWithExisting,
+} from "./existingReturn";
 export {
   NEVER_AUTOMATIC_SELLABLE,
   canPresentReturnComplete,

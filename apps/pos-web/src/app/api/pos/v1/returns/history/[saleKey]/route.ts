@@ -24,6 +24,7 @@ export async function GET(
     sessionStore: composed.sessionStore,
     allowedOrigins: staffAllowedOrigins(),
     checkoutStore: composed.runtime.store,
+    returnStore: composed.returns.store,
     assignments: composed.assignments,
   });
   return NextResponse.json(result.body, { status: result.status, headers: result.headers });

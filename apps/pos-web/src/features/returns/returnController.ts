@@ -11,12 +11,12 @@ import type {
 import type { ApiResult, ReturnPort } from "../../../../../docs/contracts/ports";
 import { parseQuantityInput } from "../sell/state/quantity";
 import { cashierErrorMessage } from "../../ui/cashier-language";
+import type { ExistingReturnLineView, HistoricReturnSaleWithExisting } from "./existingReturn";
 import {
   idleReturnSession,
   OUTSTANDING_RETURN_COPY,
   presentsAutomaticSellableRestock,
   returnIdentityLocked,
-  type HistoricReturnSaleView,
   type IndependentEffectView,
   type ReturnLineDraftView,
   type ReturnPreviewLineView,
@@ -110,7 +110,7 @@ function stageFromResolution(status: ReturnResolution["status"]): ReturnStageVie
   return "in_progress";
 }
 
-function draftsFromSale(sale: HistoricReturnSaleView): readonly ReturnLineDraftView[] {
+function draftsFromSale(sale: HistoricReturnSaleWithExisting): readonly ReturnLineDraftView[] {
   return sale.lines.map((line) => ({
     orderLineId: line.orderLineId,
     name: line.name,
@@ -118,6 +118,33 @@ function draftsFromSale(sale: HistoricReturnSaleView): readonly ReturnLineDraftV
     quantity: "",
     reason: "",
     condition: "resellable",
+  }));
+}
+
+function draftsFromExisting(lines: readonly ExistingReturnLineView[]): readonly ReturnLineDraftView[] {
+  return lines.map((line) => ({
+    orderLineId: line.orderLineId,
+    name: line.name,
+    originalSoldQuantity: line.originalSoldQuantity,
+    quantity: line.quantity,
+    reason: line.reason,
+    condition: line.condition,
+  }));
+}
+
+function previewLinesFromExisting(lines: readonly ExistingReturnLineView[]): readonly ReturnPreviewLineView[] {
+  return lines.map((line) => ({
+    orderLineId: line.orderLineId,
+    requestedQuantity: line.quantity,
+    remainingReturnableQuantity: line.remainingReturnableQuantity,
+    condition: line.condition,
+    intendedDisposition: line.intendedDisposition,
+    dispositionPolicy: line.dispositionPolicy,
+    automaticSellableRestock: presentsAutomaticSellableRestock(
+      line.condition,
+      line.intendedDisposition,
+      line.dispositionPolicy,
+    ),
   }));
 }
 
@@ -283,19 +310,42 @@ export function createReturnController(ports: ReturnControllerPorts) {
     isLocked(): boolean {
       return commandLock;
     },
-    selectSale(sale: HistoricReturnSaleView): void {
+    async selectSale(sale: HistoricReturnSaleWithExisting): Promise<void> {
       if (commandLock || identityIsLocked()) {
         return;
       }
       executeContext = null;
       executeBinding = null;
+      const existing = sale.existingReturn;
+      if (!existing) {
+        setSession({
+          ...idleReturnSession(),
+          stage: "selecting",
+          saleId: sale.saleId,
+          lines: draftsFromSale(sale),
+          message: `Sale ${sale.orderReference}. Select return quantities.`,
+        });
+        return;
+      }
+
       setSession({
         ...idleReturnSession(),
-        stage: "selecting",
+        stage: existing.status,
         saleId: sale.saleId,
-        lines: draftsFromSale(sale),
-        message: `Sale ${sale.orderReference}. Select return quantities.`,
+        returnId: existing.returnId,
+        refundTotal: existing.refundTotal,
+        lines: draftsFromExisting(existing.lines),
+        previewLines: previewLinesFromExisting(existing.lines),
+        complete: false,
+        message: "This sale already has an unresolved return. Checking the same return. Do not refund again.",
       });
+      commandLock = true;
+      try {
+        await resolveUnlocked();
+      } finally {
+        commandLock = false;
+        notify();
+      }
     },
     updateLine(
       orderLineId: string,
@@ -386,6 +436,18 @@ export function createReturnController(ports: ReturnControllerPorts) {
           return;
         }
         if (!outcome.value.ok) {
+          const existingReturnId = outcome.value.error.details?.operationId;
+          if (shouldResolveFailure(outcome.value) && existingReturnId) {
+            setSession({
+              ...session,
+              returnId: existingReturnId,
+              stage: "resolving",
+              complete: false,
+              message: "An existing return was found. Checking the same return. Do not refund again.",
+            });
+            await resolveUnlocked();
+            return;
+          }
           setSession({
             ...session,
             stage: "failed",
