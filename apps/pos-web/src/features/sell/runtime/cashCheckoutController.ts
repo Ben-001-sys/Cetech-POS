@@ -730,6 +730,23 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
             attempt.prepare,
           ),
         );
+        if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.details?.field === "remote_sale") {
+          retireAttempt();
+          patch({
+            stage: "prepare_failed",
+            message: "The previous sale attempt was not found. The cart is unchanged.",
+            prepared: undefined,
+          });
+          return;
+        }
+        if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.code === "REQUIRES_ATTENTION") {
+          patch({
+            stage: "finalize_failed",
+            message: cashierErrorMessage(outcome.value.error, "generic"),
+            transactionId: attempt.transactionId,
+          });
+          return;
+        }
         if (outcome.kind === "unknown" || (outcome.kind === "result" && !outcome.value.ok && shouldResolveFailure(outcome.value))) {
           await resolveSaleUnlocked();
           return;

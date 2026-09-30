@@ -1,11 +1,13 @@
 import type { ApiResult, SalesPort } from "../../../../../docs/contracts/ports";
 import type {
+  ApiFailure,
   CommandContext,
   CustomerSummary,
   PreparedSale,
   PrepareSaleRequest,
   Quote,
   ReceiptLine,
+  SaleResolution,
 } from "../../../../../docs/contracts/domain.generated";
 import { customerReceiptPlaceLabel } from "../../core/receipt/customer-presentation";
 import { loadSalePresentation } from "../../core/receipt/build-receipt-line";
@@ -19,7 +21,8 @@ import { canonicalJson, sha256Hex } from "../../local/canonical";
 import { toIsoTimestamp } from "../auth/ids";
 import { apiFailure } from "../http/api-failure";
 import { moneyEqual, type CheckoutStore, type StaffActor } from "../../core/checkout/types";
-import { isPreparedSale } from "./schema";
+import { isDefinitivePreEffectRejection, prepareEffectEvidence } from "./prepare-effect";
+import { isPreparedSale, isSaleResolution } from "./schema";
 import { assertBindingMatchesPrepareRequest, assertSaleMatchesPrepareRequest } from "./transaction-scope";
 
 export async function prepareSale(input: {
@@ -100,6 +103,18 @@ export async function prepareSale(input: {
     if (claim.kind === "replay") {
       return replayPrepared(claim.outcome, context.correlationId);
     }
+    if (claim.kind === "repair") {
+      return settleSentPrepare({
+        store,
+        salesPort,
+        actor,
+        request,
+        context,
+        now,
+        failure: undefined,
+        forceResolve: true,
+      });
+    }
 
     try {
       const result = await completePrepare({
@@ -112,47 +127,28 @@ export async function prepareSale(input: {
         now,
       });
       if (!result.ok) {
-        await store.releaseIdempotency(actor.organizationId, "sale.prepare", context.idempotencyKey);
-        return result;
-      }
-      await store.acknowledgeIdempotency(actor.organizationId, "sale.prepare", context.idempotencyKey, result.data);
-      return result;
-    } catch {
-      let recovered: ApiResult<PreparedSale> | undefined;
-      try {
-        recovered = await recoverPrepared({
+        return settleSentPrepare({
           store,
           salesPort,
           actor,
           request,
           context,
           now,
+          failure: result,
         });
-      } catch {
-        recovered = undefined;
       }
-      if (recovered?.ok) {
-        await store.acknowledgeIdempotency(actor.organizationId, "sale.prepare", context.idempotencyKey, recovered.data);
-        return recovered;
-      }
-      await store.markIdempotencyRequiresAttention(
-        actor.organizationId,
-        "sale.prepare",
-        context.idempotencyKey,
-        {
-          transactionId: request.transactionId,
-          status: "requires_attention",
-          message: "Prepare result is unknown; resolve the existing transaction before retrying",
-        },
-      );
-      if (recovered && !recovered.ok && recovered.error.code === "REQUIRES_ATTENTION") {
-        return recovered;
-      }
-      return apiFailure(
-        "INTEGRATION_UNAVAILABLE",
-        "prepare result is unknown; resolve the existing transaction before creating another order",
-        context.correlationId,
-      );
+      await store.acknowledgeIdempotency(actor.organizationId, "sale.prepare", context.idempotencyKey, result.data);
+      return result;
+    } catch {
+      return settleSentPrepare({
+        store,
+        salesPort,
+        actor,
+        request,
+        context,
+        now,
+        failure: undefined,
+      });
     }
   });
 }
@@ -204,11 +200,7 @@ async function completePrepare(input: {
     return intent;
   }
 
-  await input.store.markIdempotencySent(
-    input.actor.organizationId,
-    "sale.prepare",
-    input.context.idempotencyKey,
-  );
+  await notePrepareDispatch(input);
 
   const commercial = await input.salesPort.prepare(input.request, input.context);
   if (!commercial.ok) {
@@ -242,6 +234,7 @@ async function recoverPrepared(input: {
   readonly request: PrepareSaleRequest;
   readonly context: CommandContext;
   readonly now: Date;
+  readonly knownResolution?: ApiResult<SaleResolution>;
 }): Promise<ApiResult<PreparedSale>> {
   const local = await input.store.getSale(input.request.transactionId);
   if (local) {
@@ -272,7 +265,7 @@ async function recoverPrepared(input: {
   if (!bound.ok) {
     return bound;
   }
-  const resolved = await input.salesPort.resolve(input.request.transactionId);
+  const resolved = input.knownResolution ?? (await input.salesPort.resolve(input.request.transactionId));
   if (!resolved.ok) {
     return resolved;
   }
@@ -529,6 +522,200 @@ export function validateCustomerSnapshot(
     );
   }
   return { ok: true, data: { customerSnapshot: snapshot }, correlationId };
+}
+
+async function notePrepareDispatch(input: {
+  readonly store: CheckoutStore;
+  readonly actor: StaffActor;
+  readonly request: PrepareSaleRequest;
+  readonly context: CommandContext;
+  readonly now: Date;
+}): Promise<void> {
+  await input.store.recordPrepareDiagnostic({
+    organizationId: input.actor.organizationId,
+    operation: "sale.prepare",
+    idempotencyKey: input.context.idempotencyKey,
+    status: "sent",
+    attemptedAt: toIsoTimestamp(input.now),
+    countAttempt: true,
+    outcome: prepareEffectEvidence({
+      effectCertainty: "unknown",
+      transactionId: input.request.transactionId,
+      idempotencyKey: input.context.idempotencyKey,
+      errorCode: "INTEGRATION_UNAVAILABLE",
+      message: "Prepare was sent and the commercial result is not known yet",
+    }),
+  });
+}
+
+async function settleSentPrepare(input: {
+  readonly store: CheckoutStore;
+  readonly salesPort: Pick<SalesPort, "prepare" | "resolve">;
+  readonly actor: StaffActor;
+  readonly request: PrepareSaleRequest;
+  readonly context: CommandContext;
+  readonly now: Date;
+  readonly failure: ApiFailure | undefined;
+  readonly forceResolve?: boolean;
+}): Promise<ApiResult<PreparedSale>> {
+  const prior = await input.store.readPrepareDiagnostic(
+    input.actor.organizationId,
+    "sale.prepare",
+    input.context.idempotencyKey,
+  );
+  const dispatched = prior?.status === "sent";
+  if ((!input.forceResolve && !dispatched) || (input.failure && isDefinitivePreEffectRejection(input.failure))) {
+    const errorCode = input.failure?.error.code ?? "INTEGRATION_UNAVAILABLE";
+    await recordPrepareOutcome(input, {
+      status: "pending",
+      effectCertainty: "none",
+      errorCode,
+      message: input.failure?.error.message ?? "Prepare failed before any commercial request was sent",
+    });
+    return input.failure ?? apiFailure(
+      "INTEGRATION_UNAVAILABLE",
+      "Prepare failed before any commercial request was sent",
+      input.context.correlationId,
+    );
+  }
+
+  let resolved: ApiResult<SaleResolution> | undefined;
+  try {
+    resolved = await input.salesPort.resolve(input.request.transactionId);
+  } catch {
+    resolved = undefined;
+  }
+  if (!resolved?.ok || !isSaleResolution(resolved.data)) {
+    await recordPrepareOutcome(input, {
+      status: "requires_attention",
+      effectCertainty: "unknown",
+      errorCode: input.failure?.error.code ?? "INTEGRATION_UNAVAILABLE",
+      message: "Prepare response is unknown and the existing transaction could not be resolved",
+    });
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "This sale needs a manager check. Do not start another sale for this attempt.",
+      input.context.correlationId,
+    );
+  }
+
+  const remoteStatus = resolved.data.status;
+  if (remoteStatus === "prepared" || remoteStatus === "finalizing") {
+    let recovered: ApiResult<PreparedSale> | undefined;
+    try {
+      recovered = await recoverPrepared({ ...input, knownResolution: resolved });
+    } catch {
+      recovered = undefined;
+    }
+    if (recovered?.ok) {
+      await input.store.acknowledgeIdempotency(
+        input.actor.organizationId,
+        "sale.prepare",
+        input.context.idempotencyKey,
+        recovered.data,
+      );
+      return recovered;
+    }
+    await recordPrepareOutcome(input, {
+      status: "requires_attention",
+      effectCertainty: "unknown",
+      errorCode: recovered && !recovered.ok ? recovered.error.code : "REQUIRES_ATTENTION",
+      remoteStatus,
+      message: recovered && !recovered.ok ? recovered.error.message : resolved.data.message,
+    });
+    if (recovered && !recovered.ok && recovered.error.code === "REQUIRES_ATTENTION") {
+      return recovered;
+    }
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "This sale needs a manager check. Do not start another sale for this attempt.",
+      input.context.correlationId,
+    );
+  }
+
+  if (remoteStatus === "completed") {
+    await recordPrepareOutcome(input, {
+      status: "acknowledged",
+      effectCertainty: "completed",
+      errorCode: "OPERATION_IN_PROGRESS",
+      remoteStatus,
+      message: resolved.data.message,
+    });
+    return apiFailure(
+      "OPERATION_IN_PROGRESS",
+      "This sale is already complete. Load the existing receipt.",
+      input.context.correlationId,
+    );
+  }
+
+  if (remoteStatus === "not_found") {
+    await recordPrepareOutcome(input, {
+      status: "acknowledged",
+      effectCertainty: "not_found",
+      errorCode: "NOT_FOUND",
+      remoteStatus,
+      message: resolved.data.message ?? "The previous sale attempt was not found",
+    });
+    return apiFailure(
+      "NOT_FOUND",
+      "The previous sale attempt was not found. The cart is unchanged.",
+      input.context.correlationId,
+      { field: "remote_sale" },
+    );
+  }
+
+  await recordPrepareOutcome(input, {
+    status: "requires_attention",
+    effectCertainty: "unknown",
+    errorCode: input.failure?.error.code ?? "REQUIRES_ATTENTION",
+    remoteStatus,
+    message: resolved.data.message ?? "Prepare response is unknown",
+  });
+  return apiFailure(
+    "REQUIRES_ATTENTION",
+    resolved.data.message ?? "This sale needs a manager check. Do not start another sale for this attempt.",
+    input.context.correlationId,
+  );
+}
+
+async function recordPrepareOutcome(
+  input: {
+    readonly store: CheckoutStore;
+    readonly actor: StaffActor;
+    readonly request: PrepareSaleRequest;
+    readonly context: CommandContext;
+    readonly now: Date;
+  },
+  evidence: {
+    readonly status: "pending" | "requires_attention" | "acknowledged";
+    readonly effectCertainty: "none" | "unknown" | "not_found" | "prepared" | "completed";
+    readonly errorCode: string;
+    readonly remoteStatus?: string;
+    readonly message?: string;
+  },
+): Promise<void> {
+  const prior = await input.store.readPrepareDiagnostic(
+    input.actor.organizationId,
+    "sale.prepare",
+    input.context.idempotencyKey,
+  );
+  await input.store.recordPrepareDiagnostic({
+    organizationId: input.actor.organizationId,
+    operation: "sale.prepare",
+    idempotencyKey: input.context.idempotencyKey,
+    status: evidence.status,
+    attemptedAt: prior?.lastAttemptAt ?? toIsoTimestamp(input.now),
+    countAttempt: !prior?.lastAttemptAt,
+    errorCode: evidence.errorCode,
+    outcome: prepareEffectEvidence({
+      effectCertainty: evidence.effectCertainty,
+      transactionId: input.request.transactionId,
+      idempotencyKey: input.context.idempotencyKey,
+      errorCode: evidence.errorCode,
+      remoteStatus: evidence.remoteStatus,
+      message: evidence.message,
+    }),
+  });
 }
 
 function replayPrepared(outcome: unknown, correlationId: CommandContext["correlationId"]): ApiResult<PreparedSale> {

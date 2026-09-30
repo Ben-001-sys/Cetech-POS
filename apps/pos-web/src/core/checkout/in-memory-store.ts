@@ -6,6 +6,7 @@ import type {
   FaultInjectingCheckoutStore,
   OutboxEvent,
   PosSaleRecord,
+  PrepareOperationDiagnostic,
   StoredCashMovement,
   StoredDevice,
   StoredPayment,
@@ -22,6 +23,9 @@ type IdempotencyRow = {
   status: PendingOperation["status"];
   outcome?: unknown;
   intentSnapshot?: PrepareIntentSnapshot;
+  attempts: number;
+  lastAttemptAt?: string;
+  lastErrorCode?: string;
   locationId?: Id;
   registerId?: Id;
   shiftId?: Uuid;
@@ -34,6 +38,20 @@ function idempKey(organizationId: Id, operation: PendingOperation["operation"], 
 
 function scopeKey(operation: PendingOperation["operation"], transactionId: Uuid): string {
   return `${operation}\0${transactionId}`;
+}
+
+function diagnosticFromRow(row: IdempotencyRow): PrepareOperationDiagnostic {
+  return {
+    organizationId: row.organizationId,
+    idempotencyKey: row.idempotencyKey,
+    transactionId: row.transactionId,
+    status: row.status,
+    attempts: row.attempts ?? 0,
+    lastAttemptAt: row.lastAttemptAt,
+    lastErrorCode: row.lastErrorCode,
+    outcome: row.outcome,
+    intentPresent: row.intentSnapshot !== undefined,
+  };
 }
 
 export function createInMemoryCheckoutStore(): FaultInjectingCheckoutStore {
@@ -417,6 +435,7 @@ export function createInMemoryCheckoutStore(): FaultInjectingCheckoutStore {
           idempotencyKey,
           requestHash,
           status: "pending",
+          attempts: 0,
           locationId,
           registerId: scope?.registerId,
           shiftId: scope?.shiftId,
@@ -505,6 +524,37 @@ export function createInMemoryCheckoutStore(): FaultInjectingCheckoutStore {
       if (row && row.status === "sent") {
         row.status = "pending";
       }
+    },
+
+    async recordPrepareDiagnostic(input) {
+      const row = idempotency.get(idempKey(input.organizationId, input.operation, input.idempotencyKey));
+      if (!row) {
+        return;
+      }
+      const current = row.attempts ?? 0;
+      row.attempts = input.countAttempt ? current + 1 : Math.max(current, input.errorCode ? 1 : current);
+      row.lastAttemptAt = input.attemptedAt;
+      row.status = input.status;
+      if (input.errorCode !== undefined) {
+        row.lastErrorCode = input.errorCode;
+      }
+      if (input.outcome !== undefined) {
+        row.outcome = input.outcome;
+      }
+    },
+
+    async readPrepareDiagnostic(organizationId, operation, idempotencyKey) {
+      const row = idempotency.get(idempKey(organizationId, operation, idempotencyKey));
+      return row ? diagnosticFromRow(row) : undefined;
+    },
+
+    async findSalePrepareOperation(transactionId) {
+      for (const row of idempotency.values()) {
+        if (row.operation === "sale.prepare" && row.transactionId === transactionId) {
+          return diagnosticFromRow(row);
+        }
+      }
+      return undefined;
     },
 
     async peekIdempotency(organizationId, operation, idempotencyKey) {

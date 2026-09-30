@@ -267,6 +267,8 @@ Do not press the confirmation button repeatedly because the screen is slow.
 
 If the POS becomes uncertain after payment, keep the current sale and follow the on-screen recovery message.
 
+If Pay does not reach payment, keep the same cart. A sale that was not created can be retried or cleared only after that attempt is finished. If the POS cannot prove whether the sale was created, it keeps that same attempt for a manager. It shows **This needs manual review. Contact a manager or support.** Do not start a second sale for that attempt, and do not clear the browser's saved data to repair it.
+
 ---
 
 ## 13. Electronic payment

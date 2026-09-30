@@ -13,6 +13,7 @@ import type {
   IdempotencyClaim,
   OutboxEvent,
   PosSaleRecord,
+  PrepareOperationDiagnostic,
   SeedPreparedSaleInput,
   StoredCashMovement,
   StoredDevice,
@@ -738,6 +739,38 @@ export function createSupabaseCheckoutStore(options: SupabaseCheckoutStoreOption
       }
     },
 
+    async recordPrepareDiagnostic(input) {
+      const existing = await getPending(getRows, input.organizationId, input.operation, input.idempotencyKey);
+      if (!existing) {
+        return;
+      }
+      const current = numericAttempts(existing.attempts);
+      const attempts = input.countAttempt ? current + 1 : Math.max(current, input.errorCode ? 1 : current);
+      await patchPending(request, input.organizationId, input.operation, input.idempotencyKey, {
+        status: input.status,
+        attempts,
+        last_attempt_at: input.attemptedAt,
+        ...(input.errorCode !== undefined ? { last_error_code: input.errorCode } : {}),
+        ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
+      });
+    },
+
+    async readPrepareDiagnostic(organizationId, operation, idempotencyKey) {
+      const existing = await getPending(getRows, organizationId, operation, idempotencyKey);
+      return existing ? diagnosticFromRest(existing, idempotencyKey) : undefined;
+    },
+
+    async findSalePrepareOperation(transactionId) {
+      const rows = await getRows(
+        `pos_pending_operations?transaction_id=eq.${encodeURIComponent(transactionId)}&operation=eq.sale.prepare&select=${PENDING_DIAGNOSTIC_SELECT}`,
+      );
+      const row = rows[0];
+      if (!row || typeof row.idempotency_key !== "string" || typeof row.organization_id !== "string") {
+        return undefined;
+      }
+      return diagnosticFromRest(row, row.idempotency_key);
+    },
+
     async peekIdempotency(organizationId, operation, idempotencyKey) {
       const existing = await getPending(getRows, organizationId, operation, idempotencyKey);
       return asPendingStatus(existing?.status);
@@ -778,6 +811,39 @@ async function upsertSale(
   }
 }
 
+const PENDING_DIAGNOSTIC_SELECT =
+  "organization_id,idempotency_key,transaction_id,request_hash,status,outcome,intent_snapshot,attempts,last_attempt_at,last_error_code";
+
+function numericAttempts(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function diagnosticFromRest(row: RestRow, idempotencyKey: Uuid): PrepareOperationDiagnostic | undefined {
+  if (typeof row.organization_id !== "string" || typeof row.status !== "string") {
+    return undefined;
+  }
+  return {
+    organizationId: row.organization_id,
+    idempotencyKey,
+    transactionId: typeof row.transaction_id === "string" ? row.transaction_id : undefined,
+    status: row.status as PrepareOperationDiagnostic["status"],
+    attempts: numericAttempts(row.attempts),
+    lastAttemptAt: typeof row.last_attempt_at === "string" ? row.last_attempt_at : undefined,
+    lastErrorCode: typeof row.last_error_code === "string" ? row.last_error_code : undefined,
+    outcome: row.outcome,
+    intentPresent: parseIntentSnapshot(row.intent_snapshot) !== undefined,
+  };
+}
+
 async function getPending(
   getRows: (path: string) => Promise<RestRow[]>,
   organizationId: Id,
@@ -785,7 +851,7 @@ async function getPending(
   idempotencyKey: Uuid,
 ): Promise<RestRow | undefined> {
   const rows = await getRows(
-    `pos_pending_operations?organization_id=eq.${encodeURIComponent(organizationId)}&operation=eq.${encodeURIComponent(operation)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=request_hash,status,outcome,intent_snapshot`,
+    `pos_pending_operations?organization_id=eq.${encodeURIComponent(organizationId)}&operation=eq.${encodeURIComponent(operation)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=${PENDING_DIAGNOSTIC_SELECT}`,
   );
   return rows[0];
 }

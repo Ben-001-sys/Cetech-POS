@@ -115,6 +115,14 @@ async function finishJournalEffect<T>(
       await options.journal.markResponseUnknown(operationId);
       return;
     }
+    if (!result.ok && result.error.code === "REQUIRES_ATTENTION") {
+      await options.journal.markRequiresAttention(operationId, result.error.code);
+      return;
+    }
+    if (!result.ok && result.error.details?.field === "remote_sale") {
+      await options.journal.markAcknowledged(operationId);
+      return;
+    }
     await options.journal.markAcknowledged(operationId);
   } catch {
     // The append-before-send row already exists. If local acknowledgement fails,

@@ -505,7 +505,9 @@ Do not mark a blocked test as PASS.
 - POS keeps the same transaction;
 - message tells staff what to do;
 - no instruction to charge again;
-- recovery checks the existing transaction.
+- recovery checks the existing transaction;
+- if the sale was not created, the cart stays and another Pay starts only after that attempt is cleared;
+- if the result is still unknown, the message is **This needs manual review. Contact a manager or support.** and Pay does not start a second sale.
 
 ### Your result
 
