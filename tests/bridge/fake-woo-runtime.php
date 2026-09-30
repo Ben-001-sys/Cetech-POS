@@ -296,7 +296,7 @@ class Cetech_Pos_Bridge_Fake_Woo_Runtime extends Cetech_Pos_Bridge_Woo_Runtime {
 		return true;
 	}
 
-	public function create_prepared_order( array $quote, $transaction_id, $request_hash, $recovery_token = '' ) {
+	public function create_prepared_order( array $quote, $transaction_id, $request_hash, $recovery_token = '', $on_order_identity = null ) {
 		$hold = $this->hold_stock_seconds();
 		if ( $hold <= 0 ) {
 			return Cetech_Pos_Bridge_Response::wp_error(
@@ -326,11 +326,12 @@ class Cetech_Pos_Bridge_Fake_Woo_Runtime extends Cetech_Pos_Bridge_Woo_Runtime {
 		++$this->next_order_id;
 		$sale_id  = 'sale-' . $order_id;
 		$customer = isset( $quote['customer'] ) && is_array( $quote['customer'] ) ? $quote['customer'] : array( 'kind' => 'walkin' );
+		$frozen   = $this->build_frozen_prepare_document( $quote, $transaction_id, $request_hash );
 		$this->orders[] = array(
 			'id'              => $order_id,
 			'pos'             => true,
-			'transaction_id'  => null,
-			'request_hash'    => null,
+			'transaction_id'  => (string) $transaction_id,
+			'request_hash'    => (string) $request_hash,
 			'sale_id'         => $sale_id,
 			'status'          => 'pending',
 			'created_via'     => 'cetech-pos',
@@ -345,8 +346,15 @@ class Cetech_Pos_Bridge_Fake_Woo_Runtime extends Cetech_Pos_Bridge_Woo_Runtime {
 				: 0,
 			'quote_id'        => isset( $quote['id'] ) ? $quote['id'] : null,
 			'quote_fp'        => isset( $quote['fingerprint'] ) ? $quote['fingerprint'] : null,
+			'frozen_prepare'  => $frozen,
 		);
 		$this->record_woo_mutation( 'order_creates' );
+		if ( is_callable( $on_order_identity ) ) {
+			$bound = call_user_func( $on_order_identity, $order_id, $sale_id );
+			if ( Cetech_Pos_Bridge_Quote_Request::is_error( $bound ) ) {
+				return $bound;
+			}
+		}
 		$this->fire_seam( $this->after_initial_order_save );
 		$applied = $this->apply_quote_snapshot_to_order_id( $order_id, $quote );
 		if ( Cetech_Pos_Bridge_Quote_Request::is_error( $applied ) ) {
@@ -427,6 +435,39 @@ class Cetech_Pos_Bridge_Fake_Woo_Runtime extends Cetech_Pos_Bridge_Woo_Runtime {
 			);
 		}
 		return $out;
+	}
+
+	public function find_order_by_id( $order_id ) {
+		$order = $this->order_array_by_id( $order_id );
+		if ( ! is_array( $order ) || empty( $order['pos'] ) ) {
+			return null;
+		}
+		$via = isset( $order['created_via'] ) ? (string) $order['created_via'] : '';
+		if ( $via !== '' && $via !== 'cetech-pos' ) {
+			return Cetech_Pos_Bridge_Response::wp_error(
+				'REQUIRES_ATTENTION',
+				'Claimed Woo order was not created via cetech-pos.',
+				false,
+				'contact_manager',
+				409
+			);
+		}
+		$described = $this->describe_order( $this->order_as_proof_object( $order ), $this->hold_stock_seconds() );
+		if ( ! is_array( $described ) ) {
+			return null;
+		}
+		$described['transactionId'] = isset( $order['transaction_id'] ) && $order['transaction_id'] !== null ? (string) $order['transaction_id'] : '';
+		return $described;
+	}
+
+	public function frozen_quote_for_order( $order_id ) {
+		$order = $this->order_array_by_id( $order_id );
+		if ( ! is_array( $order ) || ! isset( $order['frozen_prepare'] ) ) {
+			return null;
+		}
+		$tx   = isset( $order['transaction_id'] ) && $order['transaction_id'] !== null ? (string) $order['transaction_id'] : '';
+		$hash = isset( $order['request_hash'] ) && $order['request_hash'] !== null ? (string) $order['request_hash'] : '';
+		return $this->quote_from_frozen_document( $order['frozen_prepare'], $tx, $hash );
 	}
 
 	public function inspect_recovered_order( array $found, array $quote, $transaction_id, $request_hash ) {

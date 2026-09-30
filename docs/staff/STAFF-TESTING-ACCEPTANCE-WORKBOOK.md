@@ -508,6 +508,7 @@ Do not mark a blocked test as PASS.
 - recovery checks the existing transaction;
 - if the sale was not created, the cart stays and another Pay starts only after that attempt is cleared;
 - if the result is still unknown, the message is **This needs manual review. Contact a manager or support.** and Pay does not start a second sale;
+- if the register says an existing order cannot yet be opened for payment, staff leave that order and ask a manager instead of starting another sale;
 - if payment was already submitted, staff do not charge again;
 - if the sale is complete but the official receipt is missing, staff contact a manager and do not take payment again.
 

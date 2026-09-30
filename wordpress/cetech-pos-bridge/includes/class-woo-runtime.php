@@ -918,15 +918,18 @@ class Cetech_Pos_Bridge_Woo_Runtime {
 
 	/**
 	 * Create exactly one unpaid pending Woo order through HPOS-safe CRUD.
-	 * Recovery identity is bound into the INITIAL order save, not a later claim update.
+	 * Recovery identity is bound into the INITIAL order save. The optional
+	 * identity callback runs after that save returns a stable order id and
+	 * before quote lines, ordinary metadata completion, or stock reservation.
 	 *
 	 * @param array<string,mixed> $quote
 	 * @param string              $transaction_id
 	 * @param string              $request_hash
 	 * @param string              $recovery_token
+	 * @param callable|null       $on_order_identity function(string $order_id, string $sale_id): true|WP_Error
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public function create_prepared_order( array $quote, $transaction_id, $request_hash, $recovery_token = '' ) {
+	public function create_prepared_order( array $quote, $transaction_id, $request_hash, $recovery_token = '', $on_order_identity = null ) {
 		$hold = $this->hold_stock_seconds();
 		if ( $hold <= 0 ) {
 			return $this->unavailable( 'Woo hold-stock minutes is not configured; prepare cannot claim a bounded reserved commitment.' );
@@ -946,20 +949,34 @@ class Cetech_Pos_Bridge_Woo_Runtime {
 			add_filter( 'woocommerce_email_enabled_customer_on_hold_order', $disable_mail, 99 );
 		}
 		try {
-			$order = $this->persist_initial_order_with_recovery_token( $quote, $recovery_token );
+			$order = $this->persist_initial_order_with_recovery_token( $quote, $recovery_token, $transaction_id, $request_hash );
 			++$this->create_calls;
 			if ( Cetech_Pos_Bridge_Quote_Request::is_error( $order ) ) {
 				return $order;
 			}
 			$this->record_woo_mutation( 'order_creates' );
+			$order_id = method_exists( $order, 'get_id' ) ? (string) $order->get_id() : '';
+			if ( $order_id === '' || $order_id === '0' ) {
+				return $this->unavailable( 'Woo did not return a stable order id after the initial order save.' );
+			}
+			$sale_id = 'sale-' . $order_id;
+			if ( is_callable( $on_order_identity ) ) {
+				$bound = call_user_func( $on_order_identity, $order_id, $sale_id );
+				if ( Cetech_Pos_Bridge_Quote_Request::is_error( $bound ) ) {
+					return $bound;
+				}
+			}
+			$stamped = $this->stamp_sale_identity( $order, $sale_id );
+			if ( Cetech_Pos_Bridge_Quote_Request::is_error( $stamped ) ) {
+				return $stamped;
+			}
 			$this->fire_seam( $this->after_initial_order_save );
 			$applied = $this->apply_quote_snapshot_to_order( $order, $quote );
 			if ( Cetech_Pos_Bridge_Quote_Request::is_error( $applied ) ) {
 				return $applied;
 			}
 			$this->fire_seam( $this->after_quote_snapshot );
-			$sale_id = 'sale-' . ( method_exists( $order, 'get_id' ) ? (string) $order->get_id() : bin2hex( random_bytes( 8 ) ) );
-			$meta    = $this->save_ordinary_recovery_meta( $order, $transaction_id, $request_hash, $sale_id, $quote );
+			$meta = $this->save_ordinary_recovery_meta( $order, $transaction_id, $request_hash, $sale_id, $quote );
 			if ( Cetech_Pos_Bridge_Quote_Request::is_error( $meta ) ) {
 				return $meta;
 			}
@@ -1006,12 +1023,20 @@ class Cetech_Pos_Bridge_Woo_Runtime {
 	 * @param string              $recovery_token
 	 * @return object|WP_Error
 	 */
-	protected function persist_initial_order_with_recovery_token( array $quote, $recovery_token ) {
+	protected function persist_initial_order_with_recovery_token( array $quote, $recovery_token, $transaction_id = '', $request_hash = '' ) {
 		$customer_id = $this->quote_customer_user_id( $quote );
 		if ( Cetech_Pos_Bridge_Quote_Request::is_error( $customer_id ) ) {
 			return $customer_id;
 		}
-		$binder = function ( $order ) use ( $recovery_token, $quote, $customer_id ) {
+		$frozen = $this->build_frozen_prepare_document( $quote, $transaction_id, $request_hash );
+		if ( ! is_array( $frozen ) ) {
+			return $this->unavailable( 'Frozen prepare evidence could not be built before the Woo order save.' );
+		}
+		$frozen_json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $frozen ) : json_encode( $frozen );
+		if ( ! is_string( $frozen_json ) || $frozen_json === '' ) {
+			return $this->unavailable( 'Frozen prepare evidence could not be encoded before the Woo order save.' );
+		}
+		$binder = function ( $order ) use ( $recovery_token, $quote, $customer_id, $transaction_id, $request_hash, $frozen_json ) {
 			if ( ! is_object( $order ) ) {
 				return;
 			}
@@ -1029,6 +1054,15 @@ class Cetech_Pos_Bridge_Woo_Runtime {
 			}
 			if ( method_exists( $order, 'update_meta_data' ) ) {
 				$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_RECOVERY, $recovery_token );
+				$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_TX, (string) $transaction_id );
+				$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_HASH, (string) $request_hash );
+				if ( isset( $quote['id'] ) ) {
+					$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_QUOTE, (string) $quote['id'] );
+				}
+				if ( isset( $quote['fingerprint'] ) ) {
+					$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_QUOTE_FP, (string) $quote['fingerprint'] );
+				}
+				$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_FROZEN_PREPARE, $frozen_json );
 			}
 		};
 		if ( $this->environment->function_exists( 'add_action' ) ) {
@@ -1055,6 +1089,245 @@ class Cetech_Pos_Bridge_Woo_Runtime {
 		}
 		return $order;
 	}
+
+	protected function stamp_sale_identity( $order, $sale_id ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) || ! method_exists( $order, 'save' ) ) {
+			return $this->unavailable( 'Woo order object does not expose HPOS-safe CRUD methods.' );
+		}
+		$order->update_meta_data( Cetech_Pos_Bridge_Constants::ORDER_META_SALE, (string) $sale_id );
+		$order->save();
+		$this->record_woo_mutation( 'recovery_meta_writes' );
+		return true;
+	}
+
+	public function build_frozen_prepare_document( array $quote, $transaction_id, $request_hash ) {
+		if ( ! isset( $quote['lines'] ) || ! is_array( $quote['lines'] ) || count( $quote['lines'] ) === 0 ) {
+			return null;
+		}
+		$lines = array();
+		foreach ( $quote['lines'] as $line ) {
+			if ( ! is_array( $line ) ) {
+				return null;
+			}
+			$copy = array(
+				'lineId'    => isset( $line['lineId'] ) ? (string) $line['lineId'] : '',
+				'productId' => isset( $line['productId'] ) ? (string) $line['productId'] : '',
+				'quantity'  => isset( $line['quantity'] ) ? (string) $line['quantity'] : '',
+			);
+			if ( isset( $line['variationId'] ) && (string) $line['variationId'] !== '' ) {
+				$copy['variationId'] = (string) $line['variationId'];
+			}
+			foreach ( array( 'unitPrice', 'subtotal', 'discount', 'tax', 'total' ) as $money_key ) {
+				if ( ! isset( $line[ $money_key ] ) ) {
+					continue;
+				}
+				$money = $this->frozen_money( $line[ $money_key ] );
+				if ( $money === null ) {
+					return null;
+				}
+				$copy[ $money_key ] = $money;
+			}
+			if ( $copy['lineId'] === '' || $copy['productId'] === '' || $copy['quantity'] === '' ) {
+				return null;
+			}
+			if ( ! isset( $copy['subtotal'], $copy['discount'], $copy['tax'], $copy['total'] ) ) {
+				return null;
+			}
+			$lines[] = $copy;
+		}
+		$subtotal = $this->frozen_money( isset( $quote['subtotal'] ) ? $quote['subtotal'] : null );
+		$discount = $this->frozen_money( isset( $quote['discount'] ) ? $quote['discount'] : null );
+		$tax      = $this->frozen_money( isset( $quote['tax'] ) ? $quote['tax'] : null );
+		$total    = $this->frozen_money( isset( $quote['total'] ) ? $quote['total'] : null );
+		if ( $subtotal === null || $discount === null || $tax === null || $total === null ) {
+			return null;
+		}
+		$revision = isset( $quote['cartRevision'] ) ? $quote['cartRevision'] : '';
+		if ( ! is_int( $revision ) && ! is_string( $revision ) ) {
+			$revision = (string) $revision;
+		}
+		return array(
+			'version'          => Cetech_Pos_Bridge_Constants::FROZEN_PREPARE_VERSION,
+			'transactionId'    => (string) $transaction_id,
+			'requestHash'      => (string) $request_hash,
+			'quoteId'          => isset( $quote['id'] ) ? (string) $quote['id'] : '',
+			'quoteFingerprint' => isset( $quote['fingerprint'] ) ? (string) $quote['fingerprint'] : '',
+			'currency'         => isset( $quote['currency'] ) ? (string) $quote['currency'] : '',
+			'subtotal'         => $subtotal,
+			'discount'         => $discount,
+			'tax'              => $tax,
+			'total'            => $total,
+			'lines'            => $lines,
+			'customer'         => $this->frozen_customer( isset( $quote['customer'] ) ? $quote['customer'] : array() ),
+			'cartId'           => isset( $quote['cartId'] ) ? (string) $quote['cartId'] : '',
+			'cartRevision'     => $revision,
+			'locationId'       => isset( $quote['locationId'] ) ? (string) $quote['locationId'] : '',
+			'purchasable'      => ! empty( $quote['purchasable'] ),
+		);
+	}
+
+	public function frozen_quote_for_order( $order_id ) {
+		if ( ! $this->environment->function_exists( 'wc_get_order' ) ) {
+			return null;
+		}
+		$order = wc_get_order( $order_id );
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return null;
+		}
+		$tx   = (string) $order->get_meta( Cetech_Pos_Bridge_Constants::ORDER_META_TX );
+		$hash = (string) $order->get_meta( Cetech_Pos_Bridge_Constants::ORDER_META_HASH );
+		return $this->quote_from_frozen_document( $order->get_meta( Cetech_Pos_Bridge_Constants::ORDER_META_FROZEN_PREPARE ), $tx, $hash );
+	}
+
+	public function find_order_by_id( $order_id ) {
+		if ( ! $this->environment->function_exists( 'wc_get_order' ) ) {
+			return $this->unavailable( 'wc_get_order is not available to load a claimed Woo order.' );
+		}
+		$order = wc_get_order( $order_id );
+		if ( ! is_object( $order ) ) {
+			return null;
+		}
+		$via = method_exists( $order, 'get_created_via' ) ? (string) $order->get_created_via() : '';
+		if ( $via !== '' && $via !== 'cetech-pos' ) {
+			return $this->attention_recovery( 'Claimed Woo order was not created via cetech-pos.' );
+		}
+		$described = $this->describe_order( $order, $this->hold_stock_seconds() );
+		if ( ! is_array( $described ) ) {
+			return null;
+		}
+		$described['transactionId'] = method_exists( $order, 'get_meta' ) ? (string) $order->get_meta( Cetech_Pos_Bridge_Constants::ORDER_META_TX ) : '';
+		return $described;
+	}
+
+	protected function quote_from_frozen_document( $raw, $transaction_id, $request_hash ) {
+		$document = $this->decode_frozen_prepare_document( $raw );
+		if ( ! is_array( $document ) ) {
+			return null;
+		}
+		if ( ! isset( $document['version'] ) || (int) $document['version'] !== (int) Cetech_Pos_Bridge_Constants::FROZEN_PREPARE_VERSION ) {
+			return null;
+		}
+		$required = array( 'transactionId', 'requestHash', 'quoteId', 'quoteFingerprint', 'currency', 'subtotal', 'discount', 'tax', 'total', 'lines', 'customer', 'cartId', 'locationId' );
+		foreach ( $required as $key ) {
+			if ( ! array_key_exists( $key, $document ) ) {
+				return null;
+			}
+		}
+		if ( ! is_string( $document['transactionId'] ) || ! is_string( $document['requestHash'] ) || ! is_string( $document['quoteId'] ) || ! is_string( $document['quoteFingerprint'] ) ) {
+			return null;
+		}
+		if ( $document['quoteId'] === '' || $document['quoteFingerprint'] === '' || $document['transactionId'] === '' || $document['requestHash'] === '' ) {
+			return null;
+		}
+		if ( (string) $transaction_id !== '' && $document['transactionId'] !== (string) $transaction_id ) {
+			return null;
+		}
+		if ( (string) $request_hash !== '' && $document['requestHash'] !== (string) $request_hash ) {
+			return null;
+		}
+		foreach ( array( 'subtotal', 'discount', 'tax', 'total' ) as $money_key ) {
+			if ( $this->frozen_money( $document[ $money_key ] ) === null ) {
+				return null;
+			}
+		}
+		if ( ! is_array( $document['lines'] ) || count( $document['lines'] ) === 0 ) {
+			return null;
+		}
+		$lines = array();
+		foreach ( $document['lines'] as $line ) {
+			if ( ! is_array( $line ) || ! isset( $line['lineId'], $line['productId'], $line['quantity'], $line['subtotal'], $line['discount'], $line['tax'], $line['total'] ) ) {
+				return null;
+			}
+			if ( ! is_string( $line['lineId'] ) || $line['lineId'] === '' || ! is_string( $line['productId'] ) || $line['productId'] === '' ) {
+				return null;
+			}
+			foreach ( array( 'subtotal', 'discount', 'tax', 'total' ) as $money_key ) {
+				if ( $this->frozen_money( $line[ $money_key ] ) === null ) {
+					return null;
+				}
+			}
+			$copy = array(
+				'lineId'    => $line['lineId'],
+				'productId' => $line['productId'],
+				'quantity'  => (string) $line['quantity'],
+				'subtotal'  => $this->frozen_money( $line['subtotal'] ),
+				'discount'  => $this->frozen_money( $line['discount'] ),
+				'tax'       => $this->frozen_money( $line['tax'] ),
+				'total'     => $this->frozen_money( $line['total'] ),
+			);
+			if ( isset( $line['variationId'] ) && is_string( $line['variationId'] ) && $line['variationId'] !== '' ) {
+				$copy['variationId'] = $line['variationId'];
+			}
+			$lines[] = $copy;
+		}
+		$revision = isset( $document['cartRevision'] ) ? $document['cartRevision'] : '';
+		if ( ! is_int( $revision ) && ! is_string( $revision ) ) {
+			return null;
+		}
+		return array(
+			'id'           => $document['quoteId'],
+			'fingerprint'  => $document['quoteFingerprint'],
+			'currency'     => (string) $document['currency'],
+			'subtotal'     => $this->frozen_money( $document['subtotal'] ),
+			'discount'     => $this->frozen_money( $document['discount'] ),
+			'tax'          => $this->frozen_money( $document['tax'] ),
+			'total'        => $this->frozen_money( $document['total'] ),
+			'lines'        => $lines,
+			'customer'     => $this->frozen_customer( $document['customer'] ),
+			'cartId'       => (string) $document['cartId'],
+			'cartRevision' => $revision,
+			'locationId'   => (string) $document['locationId'],
+			'purchasable'  => ! empty( $document['purchasable'] ),
+		);
+	}
+
+	protected function decode_frozen_prepare_document( $raw ) {
+		if ( is_array( $raw ) ) {
+			$encoded = json_encode( $raw );
+			if ( ! is_string( $encoded ) ) {
+				return null;
+			}
+			$raw = $encoded;
+		}
+		if ( ! is_string( $raw ) || $raw === '' ) {
+			return null;
+		}
+		$decoded = json_decode( $raw, true );
+		if ( ! is_array( $decoded ) ) {
+			return null;
+		}
+		return $decoded;
+	}
+
+	protected function frozen_money( $money ) {
+		if ( ! is_array( $money ) || ! isset( $money['minor'], $money['currency'] ) || is_object( $money['minor'] ) ) {
+			return null;
+		}
+		if ( ! is_int( $money['minor'] ) && ! is_string( $money['minor'] ) && ! is_float( $money['minor'] ) ) {
+			return null;
+		}
+		if ( ! is_string( $money['currency'] ) || $money['currency'] === '' ) {
+			return null;
+		}
+		return array(
+			'minor'    => (int) $money['minor'],
+			'currency' => $money['currency'],
+		);
+	}
+
+	protected function frozen_customer( $customer ) {
+		if ( ! is_array( $customer ) ) {
+			return array( 'kind' => 'walkin' );
+		}
+		$out = array(
+			'kind' => isset( $customer['kind'] ) ? (string) $customer['kind'] : 'walkin',
+		);
+		if ( isset( $customer['customerId'] ) && is_string( $customer['customerId'] ) && $customer['customerId'] !== '' ) {
+			$out['customerId'] = $customer['customerId'];
+		}
+		return $out;
+	}
+
 
 	/**
 	 * Query Woo by the recovery token using supported order_key / meta CRUD.

@@ -19,6 +19,14 @@ final class Cetech_Pos_Bridge_Quote_Store {
 		}
 	}
 
+	public function forget( $id ) {
+		$id = (string) $id;
+		unset( self::$memory[ $id ] );
+		if ( function_exists( 'delete_transient' ) ) {
+			delete_transient( $this->key( $id ) );
+		}
+	}
+
 	public function get( $id ) {
 		$id = (string) $id;
 		if ( isset( self::$memory[ $id ] ) ) {

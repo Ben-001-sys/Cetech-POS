@@ -30,6 +30,8 @@ final class Cetech_Pos_Bridge_Constants {
 	const ORDER_META_RECOVERY = '_cetech_pos_woo_recovery_token';
 	const ORDER_META_QUOTE    = '_cetech_pos_quote_id';
 	const ORDER_META_QUOTE_FP = '_cetech_pos_quote_fingerprint';
+	const ORDER_META_FROZEN_PREPARE = '_cetech_pos_frozen_prepare';
+	const FROZEN_PREPARE_VERSION = 1;
 	const ORDER_META_PAYMENT  = '_cetech_pos_payment_id';
 	const ORDER_META_EVIDENCE = '_cetech_pos_evidence_id';
 	const ORDER_META_TENDER   = '_cetech_pos_tender';

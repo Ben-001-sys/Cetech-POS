@@ -27,6 +27,14 @@ class Cetech_Pos_Bridge_Claim_Store {
 	const INSERT_DUPLICATE_KEY  = 'duplicate_key';
 	const INSERT_DUPLICATE_TX   = 'duplicate_transaction';
 
+	const BIND_NEWLY_BOUND            = 'newly_bound';
+	const BIND_ALREADY_BOUND          = 'already_bound';
+	const BIND_NOT_FOUND              = 'not_found';
+	const BIND_TRANSACTION_MISMATCH   = 'transaction_mismatch';
+	const BIND_REQUEST_HASH_MISMATCH  = 'request_hash_mismatch';
+	const BIND_CONFLICTING_ORDER_ID   = 'conflicting_woo_order_id';
+	const BIND_CONFLICTING_SALE_ID    = 'conflicting_sale_id';
+
 	/** @var array<string,bool> */
 	private $locks = array();
 
@@ -152,6 +160,47 @@ class Cetech_Pos_Bridge_Claim_Store {
 	}
 
 	/**
+	 * Bind the Woo order created for this prepare claim.
+	 *
+	 * Writes only woo_order_id and sale_id. Does not change status, the
+	 * recovery token, the transaction id, or the request hash. The same
+	 * identity is idempotent. A different order or sale is a conflict.
+	 *
+	 * @param string $operation
+	 * @param string $idempotency_key
+	 * @param string $transaction_id
+	 * @param string $request_hash
+	 * @param string $woo_order_id
+	 * @param string $sale_id
+	 * @return string One of BIND_* constants
+	 */
+	public function bind_created_order_identity( $operation, $idempotency_key, $transaction_id, $request_hash, $woo_order_id, $sale_id ) {
+		$woo_order_id = (string) $woo_order_id;
+		$sale_id      = (string) $sale_id;
+		if ( $woo_order_id === '' || $sale_id === '' ) {
+			return self::BIND_NOT_FOUND;
+		}
+		if ( $this->has_wpdb() ) {
+			return $this->bind_wpdb( $operation, $idempotency_key, $transaction_id, $request_hash, $woo_order_id, $sale_id );
+		}
+		$scope = $this->site_scope();
+		$key   = $this->key_index( $scope, $operation, $idempotency_key );
+		if ( ! isset( $this->by_key[ $key ] ) ) {
+			return self::BIND_NOT_FOUND;
+		}
+		$row        = $this->by_key[ $key ];
+		$classified = $this->classify_bind( $row, $transaction_id, $request_hash, $woo_order_id, $sale_id );
+		if ( $classified !== self::BIND_NEWLY_BOUND ) {
+			return $classified;
+		}
+		$row['woo_order_id']      = $woo_order_id;
+		$row['sale_id']           = $sale_id;
+		$row['updated_at']        = gmdate( 'Y-m-d H:i:s' );
+		$this->by_key[ $key ]     = $row;
+		return self::BIND_NEWLY_BOUND;
+	}
+
+	/**
 	 * Non-blocking creator lock. wpdb uses GET_LOCK (released on connection
 	 * close). Memory uses a flag; tests simulate crash by throwing inside try
 	 * so the engine's finally releases the lock.
@@ -211,6 +260,76 @@ class Cetech_Pos_Bridge_Claim_Store {
 			return self::INSERT_DUPLICATE_TX;
 		}
 		return self::INSERT_DUPLICATE_KEY;
+	}
+
+	private function bind_wpdb( $operation, $idempotency_key, $transaction_id, $request_hash, $woo_order_id, $sale_id ) {
+		$claim = $this->get_by_idempotency( $operation, $idempotency_key );
+		$seen  = $this->classify_bind( $claim, $transaction_id, $request_hash, $woo_order_id, $sale_id );
+		if ( $seen !== self::BIND_NEWLY_BOUND ) {
+			return $seen;
+		}
+		$wpdb  = $GLOBALS['wpdb'];
+		$table = Cetech_Pos_Bridge_Schema_Install::table_name( $wpdb );
+		$now   = gmdate( 'Y-m-d H:i:s' );
+		$sql   = $wpdb->prepare(
+			'UPDATE ' . $table . ' SET woo_order_id = %s, sale_id = %s, updated_at = %s WHERE site_scope = %s AND operation_type = %s AND idempotency_key = %s AND transaction_id = %s AND request_hash = %s AND (woo_order_id IS NULL OR woo_order_id = %s OR woo_order_id = %s) AND (sale_id IS NULL OR sale_id = %s OR sale_id = %s)',
+			$woo_order_id,
+			$sale_id,
+			$now,
+			$this->site_scope(),
+			$operation,
+			$idempotency_key,
+			$transaction_id,
+			$request_hash,
+			'',
+			$woo_order_id,
+			'',
+			$sale_id
+		);
+		$updated = $wpdb->query( $sql );
+		$after   = $this->classify_bind(
+			$this->get_by_idempotency( $operation, $idempotency_key ),
+			$transaction_id,
+			$request_hash,
+			$woo_order_id,
+			$sale_id
+		);
+		if ( $after === self::BIND_ALREADY_BOUND && (int) $updated > 0 ) {
+			return self::BIND_NEWLY_BOUND;
+		}
+		return $after;
+	}
+
+	/**
+	 * @param array<string,mixed>|null $claim
+	 * @param string                   $transaction_id
+	 * @param string                   $request_hash
+	 * @param string                   $woo_order_id
+	 * @param string                   $sale_id
+	 * @return string
+	 */
+	private function classify_bind( $claim, $transaction_id, $request_hash, $woo_order_id, $sale_id ) {
+		if ( ! is_array( $claim ) ) {
+			return self::BIND_NOT_FOUND;
+		}
+		if ( (string) $claim['transaction_id'] !== (string) $transaction_id ) {
+			return self::BIND_TRANSACTION_MISMATCH;
+		}
+		if ( (string) $claim['request_hash'] !== (string) $request_hash ) {
+			return self::BIND_REQUEST_HASH_MISMATCH;
+		}
+		$existing_order = isset( $claim['woo_order_id'] ) && $claim['woo_order_id'] !== null ? (string) $claim['woo_order_id'] : '';
+		$existing_sale  = isset( $claim['sale_id'] ) && $claim['sale_id'] !== null ? (string) $claim['sale_id'] : '';
+		if ( $existing_order !== '' && $existing_order !== (string) $woo_order_id ) {
+			return self::BIND_CONFLICTING_ORDER_ID;
+		}
+		if ( $existing_sale !== '' && $existing_sale !== (string) $sale_id ) {
+			return self::BIND_CONFLICTING_SALE_ID;
+		}
+		if ( $existing_order === (string) $woo_order_id && $existing_sale === (string) $sale_id ) {
+			return self::BIND_ALREADY_BOUND;
+		}
+		return self::BIND_NEWLY_BOUND;
 	}
 
 	private function row_wpdb( $where, array $args ) {

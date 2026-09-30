@@ -267,7 +267,7 @@ Do not press the confirmation button repeatedly because the screen is slow.
 
 If the POS becomes uncertain after payment, keep the current sale and follow the on-screen recovery message.
 
-If Pay does not reach payment, keep the same cart. A sale that was not sent can be tried again on that same cart. A sale that was not created can be retried or cleared only after that attempt is finished. If the POS cannot prove whether the sale was created, it keeps that same attempt for a manager. It shows **This needs manual review. Contact a manager or support.** If the screen says payment was already submitted, do not charge again. If the sale is complete but the official receipt is not on this register, contact a manager and do not take payment again. Do not start a second sale for that attempt, and do not clear the browser's saved data to repair it.
+If Pay does not reach payment, keep the same cart. A sale that was not sent can be tried again on that same cart. A sale that was not created can be retried or cleared only after that attempt is finished. If the POS cannot prove whether the sale was created, it keeps that same attempt for a manager. It shows **This needs manual review. Contact a manager or support.** If the register says an existing order cannot yet be opened for payment, leave that order as it is and ask a manager. Do not start another sale for that cart. If the screen says payment was already submitted, do not charge again. If the sale is complete but the official receipt is not on this register, contact a manager and do not take payment again. Do not start a second sale for that attempt, and do not clear the browser's saved data to repair it.
 
 ---
 

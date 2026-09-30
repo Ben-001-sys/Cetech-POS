@@ -245,6 +245,11 @@ br01_assert( strpos( $woo_src, 'update_meta_data' ) !== false, 'production recov
 br01_assert( strpos( $woo_src, 'wc_reserve_stock_for_order' ) !== false, 'production stock uses wc_reserve_stock_for_order' );
 br01_assert( strpos( $woo_src, 'wc_get_orders' ) !== false, 'production recovery lookup uses wc_get_orders' );
 br01_assert( strpos( $woo_src, 'after_initial_order_save' ) !== false, 'production exposes crash seam after initial Woo save before Quote items' );
+$br06_create_fn = substr( $woo_src, (int) strpos( $woo_src, 'function create_prepared_order' ) );
+$br06_identity_at = strpos( $br06_create_fn, 'call_user_func( $on_order_identity' );
+$br06_seam_at     = strpos( $br06_create_fn, 'fire_seam( $this->after_initial_order_save )' );
+br01_assert( $br06_identity_at !== false && $br06_seam_at !== false && $br06_identity_at < $br06_seam_at, 'production binds claim identity before the post-create seam' );
+br01_assert( strpos( $woo_src, 'ORDER_META_FROZEN_PREPARE' ) !== false, 'production persists versioned frozen prepare evidence on the Woo order' );
 br01_assert( strpos( $woo_src, 'after_quote_line' ) !== false, 'production exposes crash seam after each durable Quote line' );
 br01_assert( strpos( $woo_src, 'after_quote_snapshot' ) !== false, 'production exposes crash seam after complete Quote snapshot' );
 br01_assert( strpos( $woo_src, 'after_wc_create' ) === false, 'production does not keep a misnamed after_wc_create seam' );
@@ -267,6 +272,7 @@ br01_assert( strpos( $woo_src, 'ReserveStockException' ) !== false, 'production 
 br01_assert( strpos( $woo_src, 'reservationExpiresAt' ) !== false, 'production describes actual reservation expiry' );
 
 $prep_src = file_get_contents( dirname( __DIR__, 2 ) . '/wordpress/cetech-pos-bridge/includes/class-prepare-engine.php' );
+br01_assert( strpos( $prep_src, 'bind_created_order_identity' ) !== false, 'prepare engine binds the Woo order onto the existing claim' );
 br01_assert( strpos( $prep_src, 'wp_insert_post' ) === false, 'prepare engine does not insert posts' );
 br01_assert( strpos( $prep_src, 'wc_update_product_stock' ) === false, 'prepare engine does not decrement _stock itself' );
 br01_assert( strpos( $prep_src, 'woo_create_entered' ) !== false, 'prepare persists create-entered before wc_create_order' );
@@ -567,16 +573,31 @@ br01_assert_eq( 1, (int) $br06_a_claim['woo_create_entered'], 'seam A persisted 
 br01_assert( is_string( $br06_a_claim['woo_recovery_token'] ) && strlen( $br06_a_claim['woo_recovery_token'] ) === 64, 'seam A persisted recovery token before create' );
 br01_assert_eq( $br06_a_claim['woo_recovery_token'], $br06_a_runtime->orders[0]['recovery_token'], 'seam A bound the claim token into the created Woo order' );
 br01_assert_eq( $br06_a_claim['woo_recovery_token'], $br06_a_runtime->orders[0]['order_key'], 'seam A persisted recovery identity as Woo order_key' );
-br01_assert_eq( null, $br06_a_runtime->orders[0]['transaction_id'], 'seam A has not yet saved ordinary transaction metadata' );
+br01_assert_eq( (string) $br06_a_runtime->orders[0]['id'], (string) $br06_a_claim['woo_order_id'], 'seam A bound the Woo order id before later work' );
+br01_assert_eq( 'sale-' . $br06_a_runtime->orders[0]['id'], (string) $br06_a_claim['sale_id'], 'seam A bound the deterministic sale id' );
+br01_assert_eq( $br06_a_body['transactionId'], $br06_a_runtime->orders[0]['transaction_id'], 'seam A persisted the transaction id on the Woo order' );
+br01_assert_eq( Cetech_Pos_Bridge_Request_Hash::hash( $br06_a_body ), $br06_a_runtime->orders[0]['request_hash'], 'seam A persisted the request hash on the Woo order' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::STATUS_PREPARING, $br06_a_claim['internal_status'], 'seam A crash leaves the claim unfinished so the locked retry can classify it' );
+br01_assert( is_array( $br06_a_runtime->orders[0]['frozen_prepare'] ), 'seam A stored frozen prepare evidence before later work' );
+br01_assert_eq( 1, (int) $br06_a_runtime->orders[0]['frozen_prepare']['version'], 'seam A frozen evidence is version 1' );
 br01_assert_eq( 0, count( isset( $br06_a_runtime->orders[0]['items'] ) ? $br06_a_runtime->orders[0]['items'] : array() ), 'seam A has zero Quote line items' );
 br01_assert( ! isset( $br06_a_runtime->orders[0]['line_economics'] ), 'seam A has no Quote snapshot economics' );
 $br06_a_before = $br06_a_runtime->snapshot_woo_state();
+br01_assert_eq( 1, $br06_a_before['mutations']['order_creates'], 'seam A GET baseline counted the one order create' );
+br01_assert_eq( 0, $br06_a_before['mutations']['item_adds'], 'seam A GET baseline has no item writes' );
+br01_assert_eq( 0, $br06_a_before['mutations']['stock_reservations'], 'seam A GET baseline has no reservation writes' );
+br01_assert_eq( 0, $br06_a_before['mutations']['payment_completes'], 'seam A GET baseline has no payment writes' );
+br01_assert_eq( 0, $br06_a_before['mutations']['order_cancels'], 'seam A GET baseline has no cancel writes' );
 $br06_a_resolved = $br06_a_stack['prep']->resolve( $br06_a_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_a_resolved['status'], 'seam A resolve is truthful preparing, not requires_attention' );
+br01_assert_eq( 'requires_attention', $br06_a_resolved['status'], 'seam A resolve reports the existing order as not yet payable' );
+br01_assert_eq( 'sale-' . $br06_a_runtime->orders[0]['id'], $br06_a_resolved['saleId'], 'seam A resolve returns the bound sale id' );
+br01_assert_eq( (string) $br06_a_runtime->orders[0]['id'], $br06_a_resolved['orderReference'], 'seam A resolve returns the bound order reference' );
+br01_assert( strpos( $br06_a_resolved['message'], 'cannot yet be safely opened for payment' ) !== false, 'seam A resolve explains the order cannot yet be opened for payment' );
 br01_assert( ! isset( $br06_a_resolved['stockCommitment'] ), 'seam A resolve does not report stockCommitment' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::STATUS_PREPARING, $br06_a_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_a_key )['internal_status'], 'seam A GET does not rewrite the claim' );
 br06_assert_woo_frozen( $br06_a_runtime, $br06_a_before, 'seam A GET' );
 $br06_a_resolved_again = $br06_a_stack['prep']->resolve( $br06_a_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_a_resolved_again['status'], 'repeated seam A GET stays preparing' );
+br01_assert_eq( 'requires_attention', $br06_a_resolved_again['status'], 'repeated seam A GET stays requires_attention' );
 br06_assert_woo_frozen( $br06_a_runtime, $br06_a_before, 'repeated seam A GET' );
 br01_assert_eq( 1, $br06_a_runtime->pos_order_count(), 'seam A resolve creates no second Woo order' );
 br01_assert_eq( 1, $br06_a_runtime->create_calls, 'seam A resolve does not call wc_create_order' );
@@ -639,7 +660,8 @@ br01_assert_eq( 1, $br06_b_runtime->create_calls, 'seam D called wc_create_order
 br01_assert( ! br06_order_reserved( $br06_b_runtime ), 'seam D reservation is incomplete' );
 $br06_b_before = $br06_b_runtime->snapshot_woo_state();
 $br06_b_resolved = $br06_b_stack['prep']->resolve( $br06_b_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_b_resolved['status'], 'seam D resolve does not report prepared without reservation' );
+br01_assert_eq( 'requires_attention', $br06_b_resolved['status'], 'seam D resolve does not report prepared without reservation' );
+br01_assert_eq( (string) $br06_b_runtime->orders[0]['id'], (string) $br06_b_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_b_key )['woo_order_id'], 'seam D claim keeps the Woo order id' );
 br01_assert( ! isset( $br06_b_resolved['stockCommitment'] ), 'seam D resolve does not report stockCommitment' );
 br01_assert( ! br06_order_reserved( $br06_b_runtime ), 'seam D resolve does not complete or invent reservation' );
 br06_assert_woo_frozen( $br06_b_runtime, $br06_b_before, 'seam D GET' );
@@ -668,6 +690,8 @@ br01_assert_eq( 1, $br06_c_runtime->create_calls, 'seam C called wc_create_order
 br01_assert( br06_order_reserved( $br06_c_runtime ), 'seam C reservation is proven before claim persist' );
 $br06_c_claim = $br06_c_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_c_key );
 br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::STATUS_PREPARING, $br06_c_claim['internal_status'], 'seam F claim remains preparing before repair' );
+br01_assert_eq( (string) $br06_c_runtime->orders[0]['id'], (string) $br06_c_claim['woo_order_id'], 'seam F claim already knows the Woo order' );
+br01_assert_eq( 'sale-' . $br06_c_runtime->orders[0]['id'], (string) $br06_c_claim['sale_id'], 'seam F claim already knows the sale id' );
 $br06_c_before = $br06_c_runtime->snapshot_woo_state();
 $br06_c_resolved = $br06_c_stack['prep']->resolve( $br06_c_body['transactionId'] );
 br01_assert_eq( 'prepared', $br06_c_resolved['status'], 'seam F resolve reports prepared from proven Woo without writing' );
@@ -751,9 +775,9 @@ $br06_get_before = $br06_get_runtime->snapshot_woo_state();
 $br06_get_r1 = $br06_get_stack['prep']->resolve( $br06_get_body['transactionId'] );
 $br06_get_r2 = $br06_get_stack['prep']->resolve( $br06_get_body['transactionId'] );
 $br06_get_r3 = $br06_get_stack['prep']->resolve( $br06_get_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_get_r1['status'], 'interleaved GET 1 is preparing' );
-br01_assert_eq( 'preparing', $br06_get_r2['status'], 'interleaved GET 2 is preparing' );
-br01_assert_eq( 'preparing', $br06_get_r3['status'], 'interleaved GET 3 is preparing' );
+br01_assert_eq( 'requires_attention', $br06_get_r1['status'], 'interleaved GET 1 reports the unfinished order' );
+br01_assert_eq( 'requires_attention', $br06_get_r2['status'], 'interleaved GET 2 reports the unfinished order' );
+br01_assert_eq( 'requires_attention', $br06_get_r3['status'], 'interleaved GET 3 reports the unfinished order' );
 br06_assert_woo_frozen( $br06_get_runtime, $br06_get_before, 'in-memory interleaved GET (not a DB concurrency PASS)' );
 br01_assert_eq( 1, $br06_get_runtime->pos_order_count(), 'interleaved GET creates no order #2' );
 $br06_get_post = $br06_get_stack['prep']->prepare( $br06_get_body, $br06_get_key );
@@ -775,10 +799,10 @@ $br06_snap_runtime->after_quote_snapshot = br06_thrower( 'crash after complete Q
 br06_prepare_crashed( $br06_snap_stack['prep'], $br06_snap_body, $br06_snap_key, 'crash after complete Quote snapshot' );
 br01_assert_eq( 1, count( $br06_snap_runtime->orders[0]['items'] ), 'after_quote_snapshot persisted the Quote line set' );
 br01_assert_eq( $br06_snap_quote['lines'][0]['lineId'], $br06_snap_runtime->orders[0]['items'][0]['line_id'], 'Quote line identity is bound on the first durable item save' );
-br01_assert_eq( null, $br06_snap_runtime->orders[0]['transaction_id'], 'after_quote_snapshot has not written ordinary recovery metadata' );
+br01_assert_eq( $br06_snap_body['transactionId'], $br06_snap_runtime->orders[0]['transaction_id'], 'after_quote_snapshot already has the transaction id from the first order save' );
 $br06_snap_before = $br06_snap_runtime->snapshot_woo_state();
 $br06_snap_get = $br06_snap_stack['prep']->resolve( $br06_snap_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_snap_get['status'], 'complete snapshot without reservation is preparing' );
+br01_assert_eq( 'requires_attention', $br06_snap_get['status'], 'complete snapshot without reservation is not prepared' );
 br06_assert_woo_frozen( $br06_snap_runtime, $br06_snap_before, 'GET after_quote_snapshot' );
 $br06_snap_retry = $br06_snap_stack['prep']->prepare( $br06_snap_body, $br06_snap_key );
 br01_assert( is_array( $br06_snap_retry ), 'POST after complete snapshot repairs PreparedSale' );
@@ -803,16 +827,17 @@ $br06_mid_key  = br06_next_uuid();
 $br06_mid_runtime->after_quote_line = br06_thrower( 'crash mid Quote snapshot after line A' );
 br06_prepare_crashed( $br06_mid_stack['prep'], $br06_mid_body, $br06_mid_key, 'crash mid Quote snapshot after line A' );
 br01_assert_eq( 1, $br06_mid_runtime->pos_order_count(), 'mid-snapshot crash leaves one Woo order' );
+br01_assert_eq( (string) $br06_mid_runtime->orders[0]['id'], (string) $br06_mid_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_mid_key )['woo_order_id'], 'mid-snapshot claim already knows the Woo order' );
 br01_assert_eq( 1, $br06_mid_runtime->create_calls, 'mid-snapshot crash create_calls=1' );
 br01_assert_eq( 1, count( $br06_mid_runtime->orders[0]['items'] ), 'mid-snapshot persisted only line A' );
 br01_assert_eq( $br06_mid_quote['lines'][0]['lineId'], $br06_mid_runtime->orders[0]['items'][0]['line_id'], 'mid-snapshot line A keeps Quote line identity' );
 br01_assert_eq( '101', $br06_mid_runtime->orders[0]['items'][0]['productId'], 'mid-snapshot line A product matches Quote' );
 br01_assert( ! isset( $br06_mid_runtime->orders[0]['total_minor'] ), 'mid-snapshot order totals are not final' );
-br01_assert_eq( null, $br06_mid_runtime->orders[0]['transaction_id'], 'mid-snapshot has no ordinary recovery metadata' );
+br01_assert_eq( $br06_mid_body['transactionId'], $br06_mid_runtime->orders[0]['transaction_id'], 'mid-snapshot already has the transaction id from the first order save' );
 br01_assert( ! br06_order_reserved( $br06_mid_runtime ), 'mid-snapshot has no reservation' );
 $br06_mid_before = $br06_mid_runtime->snapshot_woo_state();
 $br06_mid_get = $br06_mid_stack['prep']->resolve( $br06_mid_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_mid_get['status'], 'mid-snapshot GET is read-only preparing' );
+br01_assert_eq( 'requires_attention', $br06_mid_get['status'], 'mid-snapshot GET does not report a partial snapshot as prepared' );
 br06_assert_woo_frozen( $br06_mid_runtime, $br06_mid_before, 'mid-snapshot GET' );
 $br06_mid_retry = $br06_mid_stack['prep']->prepare( $br06_mid_body, $br06_mid_key );
 br01_assert( is_array( $br06_mid_retry ), 'mid-snapshot POST repair returns PreparedSale' );
@@ -899,7 +924,7 @@ br06_prepare_crashed( $br06_part_stack['prep'], $br06_part_body, $br06_part_key,
 $br06_part_runtime->make_partial_identifiable_line( $br06_part_runtime->orders[0]['id'], $br06_part_quote['lines'][0]['lineId'] );
 $br06_part_before = $br06_part_runtime->snapshot_woo_state();
 $br06_part_get = $br06_part_stack['prep']->resolve( $br06_part_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_part_get['status'], 'partial identifiable GET is preparing' );
+br01_assert_eq( 'requires_attention', $br06_part_get['status'], 'partial identifiable GET is not prepared' );
 br06_assert_woo_frozen( $br06_part_runtime, $br06_part_before, 'partial identifiable GET' );
 $br06_part_retry = $br06_part_stack['prep']->prepare( $br06_part_body, $br06_part_key );
 br01_assert( is_array( $br06_part_retry ), 'partial identifiable POST repairs the Quote snapshot' );
@@ -1057,7 +1082,7 @@ $br06_ab_oid = $br06_ab_runtime->orders[0]['id'];
 br01_assert( isset( $br06_ab_runtime->reservation_rows[ $br06_ab_oid ]['101'] ), 'product A reservation row exists after crash' );
 br01_assert( ! isset( $br06_ab_runtime->reservation_rows[ $br06_ab_oid ]['102'] ), 'product B reservation row is missing after crash' );
 $br06_ab_resolved = $br06_ab_stack['prep']->resolve( $br06_ab_body['transactionId'] );
-br01_assert_eq( 'preparing', $br06_ab_resolved['status'], 'resolve alone does not report prepared for a partial reservation' );
+br01_assert_eq( 'requires_attention', $br06_ab_resolved['status'], 'resolve alone does not report prepared for a partial reservation' );
 br01_assert( ! $br06_ab_runtime->reservation_is_proven( $br06_ab_oid ), 'resolve alone does not complete stock reservation' );
 br01_assert_eq( 1, $br06_ab_runtime->create_calls, 'resolve after partial crash does not call wc_create_order' );
 br01_assert_eq( 1, $br06_ab_runtime->pos_order_count(), 'resolve after partial crash creates no second order' );
@@ -1220,6 +1245,143 @@ br01_assert_eq( 1, $br06_div_runtime->create_calls, 'forced divergence retry doe
 br01_assert_eq( 1, $br06_div_runtime->pos_order_count(), 'forced divergence retry order count remains one' );
 $br06_div_resolved = $br06_div_stack['prep']->resolve( $br06_div_body['transactionId'] );
 br01_assert( $br06_div_resolved['status'] === 'preparing' || $br06_div_resolved['status'] === 'requires_attention', 'forced divergence remains resolvable without PreparedSale' );
+
+/* ---------------------------------------------------------------------------
+ * Post-create identity: idempotent bind, conflicts, quote-store expiry,
+ * and the legacy create-entered claim with no woo_order_id.
+ * ------------------------------------------------------------------------ */
+
+$br06_bind_claims = new Cetech_Pos_Bridge_Claim_Store();
+$br06_bind_key    = br06_next_uuid();
+$br06_bind_tx     = br06_next_uuid();
+$br06_bind_hash   = str_repeat( 'ab', 32 );
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::INSERT_CREATED,
+	$br06_bind_claims->insert_preparing(
+		array(
+			'operation_type'  => Cetech_Pos_Bridge_Constants::OPERATION_PREPARE,
+			'idempotency_key' => $br06_bind_key,
+			'transaction_id'  => $br06_bind_tx,
+			'request_hash'    => $br06_bind_hash,
+			'quote_id'        => 'quote-bind',
+		)
+	),
+	'identity bind fixture creates one claim'
+);
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_NEWLY_BOUND,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, $br06_bind_tx, $br06_bind_hash, '4401', 'sale-4401' ),
+	'same identity bind is newly bound'
+);
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_ALREADY_BOUND,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, $br06_bind_tx, $br06_bind_hash, '4401', 'sale-4401' ),
+	'repeated identity bind is idempotent'
+);
+br01_assert_eq( '4401', (string) $br06_bind_claims->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key )['woo_order_id'], 'idempotent bind keeps the original Woo order id' );
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_ORDER_ID,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, $br06_bind_tx, $br06_bind_hash, '4402', 'sale-4401' ),
+	'a second Woo order id conflicts'
+);
+br01_assert_eq( '4401', (string) $br06_bind_claims->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key )['woo_order_id'], 'conflicting order id does not overwrite' );
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_SALE_ID,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, $br06_bind_tx, $br06_bind_hash, '4401', 'sale-other' ),
+	'a rotated sale id conflicts'
+);
+br01_assert_eq( 'sale-4401', (string) $br06_bind_claims->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key )['sale_id'], 'conflicting sale id does not overwrite' );
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_REQUEST_HASH_MISMATCH,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, $br06_bind_tx, str_repeat( 'cd', 32 ), '4401', 'sale-4401' ),
+	'a different request hash is not bound'
+);
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_TRANSACTION_MISMATCH,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_bind_key, br06_next_uuid(), $br06_bind_hash, '4401', 'sale-4401' ),
+	'a different transaction is not bound'
+);
+br01_assert_eq(
+	Cetech_Pos_Bridge_Claim_Store::BIND_NOT_FOUND,
+	$br06_bind_claims->bind_created_order_identity( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, br06_next_uuid(), $br06_bind_tx, $br06_bind_hash, '4401', 'sale-4401' ),
+	'a missing claim is not created by identity binding'
+);
+
+$br06_leg_runtime = br06_runtime();
+$br06_leg_stack   = br06_stack( $br06_leg_runtime );
+$br06_leg_quote   = $br06_leg_stack['quotes']->quote( br06_quote_request() );
+$br06_leg_body    = br06_prepare_body( $br06_leg_quote );
+$br06_leg_key     = br06_next_uuid();
+$br06_leg_hash    = Cetech_Pos_Bridge_Request_Hash::hash( $br06_leg_body );
+$br06_leg_stack['claims']->insert_preparing(
+	array(
+		'operation_type'     => Cetech_Pos_Bridge_Constants::OPERATION_PREPARE,
+		'idempotency_key'    => $br06_leg_key,
+		'transaction_id'     => $br06_leg_body['transactionId'],
+		'request_hash'       => $br06_leg_hash,
+		'quote_id'           => $br06_leg_quote['id'],
+		'woo_create_entered' => 1,
+	)
+);
+$br06_leg_runtime->inject_pos_order( $br06_leg_body['transactionId'], $br06_leg_hash, false, null );
+$br06_leg_stack['store']->forget( $br06_leg_quote['id'] );
+$br06_leg_before = $br06_leg_runtime->woo_mutation_counts();
+$br06_leg_resolved = $br06_leg_stack['prep']->resolve( $br06_leg_body['transactionId'] );
+br01_assert_eq( 'requires_attention', $br06_leg_resolved['status'], 'legacy create-entered claim is not not_found' );
+br01_assert( isset( $br06_leg_resolved['saleId'] ) && $br06_leg_resolved['saleId'] !== '', 'legacy resolve includes the existing sale id' );
+br01_assert( isset( $br06_leg_resolved['orderReference'] ) && $br06_leg_resolved['orderReference'] !== '', 'legacy resolve includes the existing order reference' );
+br01_assert( strpos( $br06_leg_resolved['message'], 'cannot yet be safely opened for payment' ) !== false, 'legacy resolve explains the order cannot yet be opened for payment' );
+br01_assert_eq( $br06_leg_before, $br06_leg_runtime->woo_mutation_counts(), 'legacy GET resolve writes no Woo mutations' );
+br01_assert_eq( 0, $br06_leg_runtime->create_calls, 'legacy resolve does not create a replacement order' );
+br01_assert_eq( 1, $br06_leg_runtime->pos_order_count(), 'legacy resolve leaves the original order' );
+br01_assert_eq( '', (string) $br06_leg_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_leg_key )['woo_order_id'], 'legacy GET does not invent a claim order id' );
+$br06_leg_retry = $br06_leg_stack['prep']->prepare( $br06_leg_body, $br06_leg_key );
+br01_assert_eq( 'REQUIRES_ATTENTION', br06_error_code( $br06_leg_retry ), 'legacy retry does not invent a prepared sale' );
+br01_assert_eq( 0, $br06_leg_runtime->create_calls, 'legacy retry does not call order creation' );
+br01_assert_eq( 1, $br06_leg_runtime->pos_order_count(), 'legacy retry does not create a second order' );
+
+$br06_exp_runtime = br06_runtime();
+$br06_exp_stack   = br06_stack( $br06_exp_runtime );
+$br06_exp_quote   = $br06_exp_stack['quotes']->quote( br06_quote_request() );
+$br06_exp_body    = br06_prepare_body( $br06_exp_quote );
+$br06_exp_key     = br06_next_uuid();
+$br06_exp_stack['prep']->after_order_create = br06_thrower( 'crash after reservation before quote expiry recovery' );
+br06_prepare_crashed( $br06_exp_stack['prep'], $br06_exp_body, $br06_exp_key, 'crash after reservation before quote expiry recovery' );
+$br06_exp_sale = 'sale-' . $br06_exp_runtime->orders[0]['id'];
+$br06_exp_stack['store']->forget( $br06_exp_quote['id'] );
+$br06_exp_runtime->catalog['walkin']['101']['1']['unitPrice'] = '99.00';
+$br06_exp_runtime->catalog['walkin']['101']['1']['subtotal']  = '99.00';
+$br06_exp_before = $br06_exp_runtime->woo_mutation_counts();
+$br06_exp_resolved = $br06_exp_stack['prep']->resolve( $br06_exp_body['transactionId'] );
+br01_assert_eq( 'prepared', $br06_exp_resolved['status'], 'expired quote store still resolves a complete frozen order' );
+br01_assert_eq( $br06_exp_sale, $br06_exp_resolved['saleId'], 'expired quote store resolve keeps the original sale id' );
+br01_assert_eq( (string) $br06_exp_runtime->orders[0]['id'], $br06_exp_resolved['orderReference'], 'expired quote store resolve keeps the original order' );
+br01_assert_eq( $br06_exp_before, $br06_exp_runtime->woo_mutation_counts(), 'complete frozen GET resolve writes no Woo mutations' );
+br01_assert_eq( 1, $br06_exp_runtime->create_calls, 'expired quote store resolve does not create another order' );
+$br06_exp_retry = $br06_exp_stack['prep']->prepare( $br06_exp_body, $br06_exp_key );
+br01_assert( is_array( $br06_exp_retry ), 'expired quote store retry returns PreparedSale from frozen evidence' );
+br01_assert_eq( 'prepared', $br06_exp_retry['status'], 'expired quote store retry is prepared' );
+br01_assert_eq( (int) $br06_exp_quote['total']['minor'], (int) $br06_exp_retry['total']['minor'], 'expired quote store retry does not use the mutated catalog price' );
+br01_assert_eq( $br06_exp_sale, $br06_exp_retry['saleId'], 'expired quote store retry does not rotate the sale id' );
+br01_assert_eq( $br06_exp_body['transactionId'], $br06_exp_retry['transactionId'], 'expired quote store retry keeps the transaction id' );
+br01_assert_eq( 1, $br06_exp_runtime->create_calls, 'expired quote store retry does not create a second order' );
+br01_assert_eq( 1, $br06_exp_runtime->pos_order_count(), 'expired quote store retry order count stays one' );
+
+$br06_norm_runtime = br06_runtime();
+$br06_norm_stack   = br06_stack( $br06_norm_runtime );
+$br06_norm_quote   = $br06_norm_stack['quotes']->quote( br06_quote_request() );
+$br06_norm_body    = br06_prepare_body( $br06_norm_quote );
+$br06_norm_key     = br06_next_uuid();
+$br06_norm         = $br06_norm_stack['prep']->prepare( $br06_norm_body, $br06_norm_key );
+br01_assert( is_array( $br06_norm ), 'normal prepare returns PreparedSale' );
+br01_assert_eq( 'prepared', $br06_norm['status'], 'normal prepare status is prepared' );
+$br06_norm_claim = $br06_norm_stack['claims']->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $br06_norm_key );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::STATUS_PREPARED, $br06_norm_claim['internal_status'], 'normal prepare claim is prepared' );
+br01_assert_eq( (string) $br06_norm_runtime->orders[0]['id'], (string) $br06_norm_claim['woo_order_id'], 'normal prepare claim stores the one Woo order id' );
+br01_assert_eq( $br06_norm['saleId'], (string) $br06_norm_claim['sale_id'], 'normal prepare claim stores the one sale id' );
+br01_assert_eq( $br06_norm_body['transactionId'], $br06_norm['transactionId'], 'normal prepare keeps the transaction id' );
+br01_assert_eq( 1, $br06_norm_runtime->create_calls, 'normal prepare creates one Woo order' );
+br01_assert_eq( 1, $br06_norm_runtime->pos_order_count(), 'normal prepare leaves one Woo order' );
 
 br01_assert_eq( 0, $br06_ok_runtime->side_effect_counts()['payments'], 'suite still has no payment side effect on the happy-path runtime' );
 br01_assert( strpos( $woo_src, 'WoodMart' ) === false || strpos( $prep_src, 'b2bking_get' ) === false, 'prepare path does not copy B2BKing getters' );
