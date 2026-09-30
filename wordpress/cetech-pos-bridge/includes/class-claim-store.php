@@ -34,6 +34,7 @@ class Cetech_Pos_Bridge_Claim_Store {
 	const BIND_REQUEST_HASH_MISMATCH  = 'request_hash_mismatch';
 	const BIND_CONFLICTING_ORDER_ID   = 'conflicting_woo_order_id';
 	const BIND_CONFLICTING_SALE_ID    = 'conflicting_sale_id';
+	const BIND_PERSISTENCE_FAILED     = 'persistence_failed';
 
 	/** @var array<string,bool> */
 	private $locks = array();
@@ -287,15 +288,30 @@ class Cetech_Pos_Bridge_Claim_Store {
 			$sale_id
 		);
 		$updated = $wpdb->query( $sql );
-		$after   = $this->classify_bind(
+		if ( $updated === false ) {
+			return self::BIND_PERSISTENCE_FAILED;
+		}
+		$after = $this->classify_bind(
 			$this->get_by_idempotency( $operation, $idempotency_key ),
 			$transaction_id,
 			$request_hash,
 			$woo_order_id,
 			$sale_id
 		);
-		if ( $after === self::BIND_ALREADY_BOUND && (int) $updated > 0 ) {
-			return self::BIND_NEWLY_BOUND;
+		if ( (int) $updated > 0 ) {
+			if ( $after === self::BIND_ALREADY_BOUND ) {
+				return self::BIND_NEWLY_BOUND;
+			}
+			if ( $after === self::BIND_NEWLY_BOUND ) {
+				return self::BIND_PERSISTENCE_FAILED;
+			}
+			return $after;
+		}
+		if ( $after === self::BIND_ALREADY_BOUND ) {
+			return self::BIND_ALREADY_BOUND;
+		}
+		if ( $after === self::BIND_NEWLY_BOUND ) {
+			return self::BIND_PERSISTENCE_FAILED;
 		}
 		return $after;
 	}

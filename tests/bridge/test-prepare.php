@@ -1307,6 +1307,258 @@ br01_assert_eq(
 	'a missing claim is not created by identity binding'
 );
 
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
+/**
+ * Scripted $wpdb for bind_wpdb() only. get_row() returns the queued claim
+ * snapshots. query() returns the scripted write result and does not mutate.
+ */
+class Br128_Scripted_Wpdb {
+	public $query_result = false;
+	public $rows         = array();
+	public $query_calls  = 0;
+
+	public function insert() {
+		return 1;
+	}
+
+	public function prepare( $sql ) {
+		unset( $sql );
+		return 'scripted';
+	}
+
+	public function get_row( $sql, $output = null ) {
+		unset( $sql, $output );
+		if ( count( $this->rows ) === 0 ) {
+			return null;
+		}
+		return array_shift( $this->rows );
+	}
+
+	public function query( $sql ) {
+		unset( $sql );
+		++$this->query_calls;
+		return $this->query_result;
+	}
+}
+
+/**
+ * In-memory claim table used only to drive one prepare through bind_wpdb().
+ * The identity UPDATE is forced to fail and does not write woo_order_id.
+ */
+class Br128_Claim_Table_Wpdb {
+	public $rows           = array();
+	public $query_result   = false;
+	public $identity_writes = 0;
+
+	public function insert( $table, $data ) {
+		unset( $table );
+		foreach ( $this->rows as $row ) {
+			if (
+				isset( $row['operation_type'], $row['idempotency_key'], $data['operation_type'], $data['idempotency_key'] )
+				&& (string) $row['operation_type'] === (string) $data['operation_type']
+				&& (string) $row['idempotency_key'] === (string) $data['idempotency_key']
+			) {
+				return false;
+			}
+		}
+		$this->rows[] = array_merge(
+			array(
+				'woo_order_id'       => null,
+				'sale_id'            => null,
+				'outcome_json'       => null,
+				'error_code'         => null,
+				'error_message'      => null,
+				'error_details_json' => null,
+			),
+			$data
+		);
+		return 1;
+	}
+
+	public function update( $table, $data, $where ) {
+		unset( $table );
+		foreach ( $this->rows as $index => $row ) {
+			$matched = true;
+			foreach ( $where as $column => $value ) {
+				if ( ! isset( $row[ $column ] ) || (string) $row[ $column ] !== (string) $value ) {
+					$matched = false;
+					break;
+				}
+			}
+			if ( $matched ) {
+				$this->rows[ $index ] = array_merge( $row, $data );
+				return 1;
+			}
+		}
+		return 0;
+	}
+
+	public function prepare( $sql ) {
+		unset( $sql );
+		return 'claim-table';
+	}
+
+	public function get_row( $sql, $output = null ) {
+		unset( $sql, $output );
+		return isset( $this->rows[0] ) ? $this->rows[0] : null;
+	}
+
+	public function query( $sql ) {
+		unset( $sql );
+		++$this->identity_writes;
+		return $this->query_result;
+	}
+
+	public function get_var( $sql ) {
+		unset( $sql );
+		return '1';
+	}
+}
+
+function br128_with_wpdb( $wpdb, $callback ) {
+	$previous = array_key_exists( 'wpdb', $GLOBALS ) ? $GLOBALS['wpdb'] : null;
+	$had      = array_key_exists( 'wpdb', $GLOBALS );
+	$GLOBALS['wpdb'] = $wpdb;
+	try {
+		return $callback();
+	} finally {
+		if ( $had ) {
+			$GLOBALS['wpdb'] = $previous;
+		} else {
+			unset( $GLOBALS['wpdb'] );
+		}
+	}
+}
+
+function br128_wpdb_claim( $key, $tx, $hash, $order_id = null, $sale_id = null ) {
+	return array(
+		'site_scope'         => '1',
+		'operation_type'     => Cetech_Pos_Bridge_Constants::OPERATION_PREPARE,
+		'idempotency_key'    => $key,
+		'transaction_id'     => $tx,
+		'request_hash'       => $hash,
+		'quote_id'           => 'quote-wpdb-bind',
+		'internal_status'    => Cetech_Pos_Bridge_Claim_Store::STATUS_PREPARING,
+		'woo_order_id'       => $order_id,
+		'sale_id'            => $sale_id,
+		'woo_create_entered' => 1,
+		'outcome_json'       => null,
+		'error_code'         => null,
+		'error_message'      => null,
+		'error_details_json' => null,
+	);
+}
+
+function br128_wpdb_bind( $query_result, array $before, $after, $key, $tx, $hash, $order_id, $sale_id ) {
+	$wpdb                = new Br128_Scripted_Wpdb();
+	$wpdb->query_result  = $query_result;
+	$wpdb->rows          = array( $before );
+	if ( is_array( $after ) ) {
+		$wpdb->rows[] = $after;
+	}
+	$result = br128_with_wpdb(
+		$wpdb,
+		function () use ( $key, $tx, $hash, $order_id, $sale_id ) {
+			$store = new Cetech_Pos_Bridge_Claim_Store();
+			return $store->bind_created_order_identity(
+				Cetech_Pos_Bridge_Constants::OPERATION_PREPARE,
+				$key,
+				$tx,
+				$hash,
+				$order_id,
+				$sale_id
+			);
+		}
+	);
+	return array( $result, $wpdb );
+}
+
+$br128_wp_key  = br06_next_uuid();
+$br128_wp_tx   = br06_next_uuid();
+$br128_wp_hash = str_repeat( 'ef', 32 );
+$br128_unbound = br128_wpdb_claim( $br128_wp_key, $br128_wp_tx, $br128_wp_hash );
+$br128_same    = br128_wpdb_claim( $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+$br128_other_order = br128_wpdb_claim( $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '9999', 'sale-4401' );
+$br128_other_sale  = br128_wpdb_claim( $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-other' );
+
+list( $br128_false_result, $br128_false_db ) = br128_wpdb_bind( false, $br128_unbound, $br128_unbound, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_PERSISTENCE_FAILED, $br128_false_result, 'wpdb query false while unbound is persistence_failed' );
+br01_assert_eq( 1, $br128_false_db->query_calls, 'wpdb query false still attempted the identity update' );
+
+list( $br128_zero_same, $br128_zero_same_db ) = br128_wpdb_bind( 0, $br128_unbound, $br128_same, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_ALREADY_BOUND, $br128_zero_same, 'wpdb query zero with the same reread identity is already_bound' );
+br01_assert_eq( 1, $br128_zero_same_db->query_calls, 'wpdb query zero still ran the identity update' );
+
+list( $br128_zero_open, $br128_zero_open_db ) = br128_wpdb_bind( 0, $br128_unbound, $br128_unbound, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+unset( $br128_zero_open_db );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_PERSISTENCE_FAILED, $br128_zero_open, 'wpdb query zero while still unbound is persistence_failed' );
+
+list( $br128_one_same, $br128_one_same_db ) = br128_wpdb_bind( 1, $br128_unbound, $br128_same, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+unset( $br128_one_same_db );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_NEWLY_BOUND, $br128_one_same, 'wpdb query one with the same reread identity is newly_bound' );
+
+foreach ( array( 1, 0 ) as $br128_conflict_rows ) {
+	list( $br128_order_conflict, $br128_order_conflict_db ) = br128_wpdb_bind( $br128_conflict_rows, $br128_unbound, $br128_other_order, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+	unset( $br128_order_conflict_db );
+	br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_ORDER_ID, $br128_order_conflict, 'wpdb reread with a different order id conflicts for query ' . $br128_conflict_rows );
+	list( $br128_sale_conflict, $br128_sale_conflict_db ) = br128_wpdb_bind( $br128_conflict_rows, $br128_unbound, $br128_other_sale, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+	unset( $br128_sale_conflict_db );
+	br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_SALE_ID, $br128_sale_conflict, 'wpdb reread with a different sale id conflicts for query ' . $br128_conflict_rows );
+}
+
+$br128_wrong_tx = br128_wpdb_claim( $br128_wp_key, br06_next_uuid(), $br128_wp_hash );
+list( $br128_tx_result, $br128_tx_db ) = br128_wpdb_bind( 1, $br128_wrong_tx, $br128_same, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_TRANSACTION_MISMATCH, $br128_tx_result, 'wpdb transaction mismatch is returned before the update' );
+br01_assert_eq( 0, $br128_tx_db->query_calls, 'wpdb transaction mismatch does not write' );
+
+$br128_wrong_hash = br128_wpdb_claim( $br128_wp_key, $br128_wp_tx, str_repeat( 'ab', 32 ) );
+list( $br128_hash_result, $br128_hash_db ) = br128_wpdb_bind( 1, $br128_wrong_hash, $br128_same, $br128_wp_key, $br128_wp_tx, $br128_wp_hash, '4401', 'sale-4401' );
+br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::BIND_REQUEST_HASH_MISMATCH, $br128_hash_result, 'wpdb request-hash mismatch is returned before the update' );
+br01_assert_eq( 0, $br128_hash_db->query_calls, 'wpdb request-hash mismatch does not write' );
+
+$br128_table = new Br128_Claim_Table_Wpdb();
+$br128_table->query_result = false;
+br128_with_wpdb(
+	$br128_table,
+	function () use ( $br128_table ) {
+		$runtime = br06_runtime();
+		$store   = new Cetech_Pos_Bridge_Quote_Store();
+		$quotes  = new Cetech_Pos_Bridge_Quote_Engine( $runtime, $store );
+		$claims  = new Cetech_Pos_Bridge_Claim_Store();
+		$prep    = new Cetech_Pos_Bridge_Prepare_Engine( $runtime, $quotes, $store, $claims );
+		$quote   = $quotes->quote( br06_quote_request() );
+		$body    = br06_prepare_body( $quote );
+		$key     = br06_next_uuid();
+		$first   = $prep->prepare( $body, $key );
+		br01_assert_eq( 'REQUIRES_ATTENTION', br06_error_code( $first ), 'persistence failure returns requires_attention' );
+		br01_assert(
+			is_object( $first ) && strpos( $first->get_error_message(), 'could not be confirmed in the prepare claim' ) !== false,
+			'persistence failure explains the claim identity was not confirmed'
+		);
+		br01_assert_eq( 1, $runtime->create_calls, 'persistence failure creates exactly one Woo order' );
+		br01_assert_eq( 1, $runtime->pos_order_count(), 'persistence failure leaves one Woo order' );
+		br01_assert_eq( 0, count( $runtime->orders[0]['items'] ), 'persistence failure does not continue quote-line work' );
+		br01_assert( ! br06_order_reserved( $runtime ), 'persistence failure does not reserve stock' );
+		br01_assert_eq( 0, $runtime->woo_mutation_counts()['item_adds'], 'persistence failure adds no order items' );
+		br01_assert_eq( 0, $runtime->woo_mutation_counts()['stock_reservations'], 'persistence failure writes no stock reservation' );
+		br01_assert_eq( $body['transactionId'], $runtime->orders[0]['transaction_id'], 'persistence failure keeps the transaction on the order' );
+		br01_assert( is_array( $runtime->orders[0]['frozen_prepare'] ), 'persistence failure leaves frozen order evidence' );
+		$claim = $claims->get_by_idempotency( Cetech_Pos_Bridge_Constants::OPERATION_PREPARE, $key );
+		br01_assert_eq( Cetech_Pos_Bridge_Claim_Store::STATUS_REQUIRES_ATTENTION, $claim['internal_status'], 'persistence failure classifies the claim as attention' );
+		br01_assert_eq( '', (string) $claim['woo_order_id'], 'persistence failure does not treat the claim as bound' );
+		br01_assert_eq( $key, $claim['idempotency_key'], 'persistence failure keeps the idempotency key' );
+		br01_assert_eq( $body['transactionId'], $claim['transaction_id'], 'persistence failure keeps the claim transaction' );
+		$retry = $prep->prepare( $body, $key );
+		br01_assert_eq( 'REQUIRES_ATTENTION', br06_error_code( $retry ), 'persistence failure retry stays requires_attention' );
+		br01_assert_eq( 1, $runtime->create_calls, 'persistence failure retry does not create a second order' );
+		br01_assert_eq( 1, $runtime->pos_order_count(), 'persistence failure retry order count stays one' );
+		br01_assert_eq( 1, $br128_table->identity_writes, 'persistence failure retry does not attempt another identity write' );
+	}
+);
+
 $br06_leg_runtime = br06_runtime();
 $br06_leg_stack   = br06_stack( $br06_leg_runtime );
 $br06_leg_quote   = $br06_leg_stack['quotes']->quote( br06_quote_request() );

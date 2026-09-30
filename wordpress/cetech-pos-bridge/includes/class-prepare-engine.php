@@ -621,6 +621,7 @@ final class Cetech_Pos_Bridge_Prepare_Engine {
 			Cetech_Pos_Bridge_Claim_Store::BIND_REQUEST_HASH_MISMATCH => 'Prepare claim request hash did not match the created Woo order.',
 			Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_ORDER_ID  => 'Prepare claim is already bound to a different Woo order.',
 			Cetech_Pos_Bridge_Claim_Store::BIND_CONFLICTING_SALE_ID   => 'Prepare claim is already bound to a different sale.',
+			Cetech_Pos_Bridge_Claim_Store::BIND_PERSISTENCE_FAILED    => 'The Woo order was created, but its recovery identity could not be confirmed in the prepare claim.',
 		);
 		$message = isset( $messages[ $result ] ) ? $messages[ $result ] : 'Prepare claim could not bind the Woo order.';
 		$this->mark_attention( $claim, $message );
