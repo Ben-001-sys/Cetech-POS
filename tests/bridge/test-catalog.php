@@ -367,20 +367,20 @@ br01_assert( ! isset( $mapped_variable['displayPrice'] ), 'variable parent witho
 br01_assert( $variable->price_context === null, 'variable parent does not use get_price as parent authority' );
 
 $mapped_range = Cetech_Pos_Bridge_Catalog_Engine::map_product( $variable_range );
-br01_assert( ! isset( $mapped_range['displayPrice'] ), 'unequal raw child prices omit parent displayPrice' );
-br01_assert_eq( 'edit', $variable_range_a->price_context, 'range child A uses get_price edit context' );
-br01_assert_eq( 'edit', $variable_range_b->price_context, 'range child B uses get_price edit context' );
+br01_assert( ! isset( $mapped_range['displayPrice'] ), 'variable parent omits advisory displayPrice without scanning children' );
+br01_assert( $variable_range_a->price_context === null, 'variable parent mapping does not load range child A price' );
+br01_assert( $variable_range_b->price_context === null, 'variable parent mapping does not load range child B price' );
 br01_assert( $variable_range->price_context === null, 'range variable parent does not use get_price as parent authority' );
 
 $mapped_uniform = Cetech_Pos_Bridge_Catalog_Engine::map_product( $variable_uniform );
-br01_assert_eq( array( 'minor' => 1250, 'currency' => 'GHS' ), $mapped_uniform['displayPrice'], 'identical raw child edit prices map to parent advisory displayPrice' );
-br01_assert( $mapped_uniform['displayPrice']['minor'] !== 9900, 'parent get_price is not used as variable authority' );
-br01_assert_eq( 'edit', $variable_uniform_a->price_context, 'uniform child A uses get_price edit context' );
-br01_assert_eq( 'edit', $variable_uniform_b->price_context, 'uniform child B uses get_price edit context' );
+br01_assert( ! isset( $mapped_uniform['displayPrice'] ), 'uniform variable parent omits advisory displayPrice without scanning children' );
+br01_assert( $variable_uniform_a->price_context === null, 'variable parent mapping does not load uniform child A price' );
+br01_assert( $variable_uniform_b->price_context === null, 'variable parent mapping does not load uniform child B price' );
 br01_assert( $variable_uniform->price_context === null, 'uniform variable parent does not use get_price as parent authority' );
 
 $mapped_unparseable = Cetech_Pos_Bridge_Catalog_Engine::map_product( $variable_unparseable );
-br01_assert( ! isset( $mapped_unparseable['displayPrice'] ), 'unparseable child price omits parent displayPrice' );
+br01_assert( ! isset( $mapped_unparseable['displayPrice'] ), 'variable parent omits displayPrice even when a child price is unparseable' );
+br01_assert( $variable_unparseable_child->price_context === null, 'variable parent mapping does not load unparseable child price' );
 
 br01_assert_eq( 0, Cetech_Pos_Bridge_Test_Catalog_Product::$variation_price_calls, 'advisory catalog never calls get_variation_price' );
 br01_assert_eq( 0, Cetech_Pos_Bridge_Test_Catalog_Product::$variation_prices_calls, 'advisory catalog never calls get_variation_prices' );
@@ -466,7 +466,7 @@ br01_assert_eq( array( 'minor' => 15500, 'currency' => 'GHS' ), $http_by_id['102
 br01_assert( ! isset( $http_by_id['103']['displayPrice'] ), 'HTTP invalid price remains omitted' );
 br01_assert_eq( array( 'minor' => 1250, 'currency' => 'GHS' ), $http_by_id['201']['displayPrice'], 'HTTP variation emits its advisory displayPrice' );
 br01_assert( ! isset( $http_by_id['210']['displayPrice'] ), 'HTTP range variable omits parent displayPrice' );
-br01_assert_eq( array( 'minor' => 1250, 'currency' => 'GHS' ), $http_by_id['211']['displayPrice'], 'HTTP uniform variable emits parent displayPrice' );
+br01_assert( ! isset( $http_by_id['211']['displayPrice'] ), 'HTTP uniform variable omits parent displayPrice to avoid child scans' );
 br01_assert( ! isset( $http_by_id['220']['displayPrice'] ), 'HTTP unparseable-child variable omits parent displayPrice' );
 br01_assert_eq( 0, Cetech_Pos_Bridge_Test_Catalog_Product::$variation_price_calls, 'HTTP catalog path never calls get_variation_price' );
 br01_assert_eq( 0, Cetech_Pos_Bridge_Test_Catalog_Product::$variation_prices_calls, 'HTTP catalog path never calls get_variation_prices' );
