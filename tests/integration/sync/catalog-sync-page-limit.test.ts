@@ -3,7 +3,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { ApiResult } from "../../../docs/contracts/ports";
 import type { CatalogSyncPage } from "../../../apps/pos-web/src/core/catalog/sync-page";
 import { mapBridgeCatalogItem } from "../../../apps/pos-web/src/server/catalog/map-bridge-catalog";
-import { createLocalCatalogPort } from "../../../apps/pos-web/src/local/catalog-repository";\nimport { CATALOG_SYNC_REQUEST_TIMEOUT_MS } from "../../../apps/pos-web/src/local/catalog-sync-client";
+import { createLocalCatalogPort } from "../../../apps/pos-web/src/local/catalog-repository";
+import { CATALOG_SYNC_REQUEST_TIMEOUT_MS } from "../../../apps/pos-web/src/local/catalog-sync-client";
 import {
   CATALOG_SYNC_PAGE_LIMIT,
   ensureCatalogProjection,
@@ -99,7 +100,8 @@ describe("catalog producer page sizing", () => {
       },
     });
 
-    expect(CATALOG_SYNC_PAGE_LIMIT).toBe(25);\n    expect(CATALOG_SYNC_REQUEST_TIMEOUT_MS).toBe(20_000);
+    expect(CATALOG_SYNC_PAGE_LIMIT).toBe(25);
+    expect(CATALOG_SYNC_REQUEST_TIMEOUT_MS).toBe(20_000);
     expect(queries).toEqual([
       { cursor: undefined, limit: 25 },
       { cursor: "200", limit: 25 },
