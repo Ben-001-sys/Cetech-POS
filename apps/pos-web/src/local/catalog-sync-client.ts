@@ -2,7 +2,9 @@ import type { ApiResult } from "../../../../docs/contracts/ports";
 import type { Uuid } from "../../../../docs/contracts/domain.generated";
 import type { CatalogSyncPage } from "../core/catalog/sync-page";
 
-export const CATALOG_SYNC_REQUEST_TIMEOUT_MS = 20_000;\n\nexport type BrowserCatalogSyncQuery = {
+export const CATALOG_SYNC_REQUEST_TIMEOUT_MS = 20_000;
+
+export type BrowserCatalogSyncQuery = {
   readonly cursor?: string;
   readonly limit?: number;
   readonly modifiedAfter?: string;
