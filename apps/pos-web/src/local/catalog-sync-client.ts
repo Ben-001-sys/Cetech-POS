@@ -2,7 +2,7 @@ import type { ApiResult } from "../../../../docs/contracts/ports";
 import type { Uuid } from "../../../../docs/contracts/domain.generated";
 import type { CatalogSyncPage } from "../core/catalog/sync-page";
 
-export type BrowserCatalogSyncQuery = {
+export const CATALOG_SYNC_REQUEST_TIMEOUT_MS = 20_000;\n\nexport type BrowserCatalogSyncQuery = {
   readonly cursor?: string;
   readonly limit?: number;
   readonly modifiedAfter?: string;
@@ -23,7 +23,7 @@ export function createBrowserCatalogSyncClient(options: {
   const syncUrl = options.syncUrl ?? "/api/pos/v1/catalog/sync";
   const fetchImpl = options.fetchImpl ?? fetch;
   const correlationId = options.correlationId ?? (() => crypto.randomUUID());
-  const timeoutMs = options.timeoutMs ?? 8_000;
+  const timeoutMs = options.timeoutMs ?? CATALOG_SYNC_REQUEST_TIMEOUT_MS;
   return {
     async fetchPage(query) {
       const correlation = correlationId();
