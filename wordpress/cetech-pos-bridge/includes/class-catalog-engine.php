@@ -152,7 +152,11 @@ final class Cetech_Pos_Bridge_Catalog_Engine {
 	 */
 	private static function advisory_display_price( $product, $kind ) {
 		if ( $kind === 'variable' ) {
-			return self::variable_parent_advisory_display_price( $product );
+			// Variable parents are not directly purchasable. Loading every visible
+			// child here turns catalog bootstrap into an N+1 scan. Child variations
+			// carry their own advisory displayPrice, while quote-time pricing remains
+			// authoritative for the selected sellable variation.
+			return null;
 		}
 		if ( ! method_exists( $product, 'get_price' ) ) {
 			return null;
