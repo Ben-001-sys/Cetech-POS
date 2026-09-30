@@ -186,4 +186,171 @@ describe("cashier prepare recovery", () => {
     await controller.confirmCash("5.00");
     expect(confirmCash).not.toHaveBeenCalled();
   });
+
+  test("remote finalizing with a payment id does not choose payment or confirm cash", async () => {
+    const deleteDatabase = vi.spyOn(indexedDB, "deleteDatabase");
+    const { ports, confirmCash, resolveSale } = harness(async () => failure("OPERATION_IN_PROGRESS"));
+    const finalize = vi.fn();
+    ports.checkout.finalize = finalize;
+    resolveSale.mockImplementation(async (transactionId: string): Promise<ApiResult<SaleResolution>> => ({
+      ok: true,
+      correlationId: CORRELATION,
+      data: {
+        transactionId,
+        status: "finalizing",
+        paymentId: "66666666-6666-4666-8666-666666666666",
+        saleId: "sale-50104",
+        orderReference: "50104",
+        message: "Completing the sale. Payment has been submitted; do not charge again.",
+      },
+    }));
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    const saved = ports.attemptStore?.readSync();
+    expect(controller.getSession().stage).toBe("finalizing");
+    expect(controller.getSession().stage).not.toBe("choose_payment");
+    expect(controller.getSession().transactionId).toBe(saved?.transactionId);
+    expect(confirmCash).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+    await controller.confirmCash("5.00");
+    expect(confirmCash).not.toHaveBeenCalled();
+    expect(deleteDatabase).not.toHaveBeenCalled();
+    deleteDatabase.mockRestore();
+  });
+
+  test("payment_pending does not confirm cash again", async () => {
+    const { ports, confirmCash, resolveSale } = harness(async () => failure("OPERATION_IN_PROGRESS"));
+    resolveSale.mockImplementation(async (transactionId: string): Promise<ApiResult<SaleResolution>> => ({
+      ok: true,
+      correlationId: CORRELATION,
+      data: {
+        transactionId,
+        status: "payment_pending",
+        paymentId: "66666666-6666-4666-8666-666666666666",
+        message: "A payment is already pending for this sale. Do not confirm cash again.",
+      },
+    }));
+    ports.payments.resolve = vi.fn(async () => ({
+      ok: true as const,
+      correlationId: CORRELATION,
+      data: {
+        paymentId: "66666666-6666-4666-8666-666666666666",
+        transactionId: "00000000-0000-4000-8000-000000000001",
+        saleId: "sale-50104",
+        tender: "cash" as const,
+        status: "pending" as const,
+        amount: { minor: 500, currency: "GHS" as const },
+        nextAction: "resolve" as const,
+      },
+    }));
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    expect(controller.getSession().stage).not.toBe("choose_payment");
+    expect(controller.getSession().stage).toBe("resolving_payment");
+    expect(confirmCash).not.toHaveBeenCalled();
+    await controller.confirmCash("5.00");
+    expect(confirmCash).not.toHaveBeenCalled();
+    expect(controller.getSession().transactionId).toBeTruthy();
+  });
+
+  test("cancelled retires the attempt and keeps the cart available", async () => {
+    const prepare = vi.fn(async () => ({
+      ok: false as const,
+      correlationId: CORRELATION,
+      error: {
+        code: "NOT_FOUND" as const,
+        message: "This sale was cancelled. The cart is unchanged.",
+        retryable: false,
+        nextAction: "none" as const,
+        details: { field: "sale_cancelled" },
+      },
+    }));
+    const { ports } = harness(prepare);
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    expect(controller.getSession().stage).toBe("prepare_failed");
+    expect(controller.getSession().message).toContain("cart is unchanged");
+    expect(ports.attemptStore?.readSync()).toBeNull();
+    const next = vi.fn(async () => failure("STOCK_CHANGED"));
+    controller.replacePorts({ ...ports, checkout: { prepare: next, finalize: vi.fn() } });
+    await controller.startPrepare(quote());
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test("proven pre-effect INTEGRATION_UNAVAILABLE retries the same transaction without resolving", async () => {
+    const prepare = vi.fn(async () => ({
+      ok: false as const,
+      correlationId: CORRELATION,
+      error: {
+        code: "INTEGRATION_UNAVAILABLE" as const,
+        message: "catalog presentation is unavailable",
+        retryable: true,
+        nextAction: "resolve" as const,
+        details: { field: "pre_effect" },
+      },
+    }));
+    const { ports, resolveSale, confirmCash } = harness(prepare);
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    const first = ports.attemptStore?.readSync();
+    expect(resolveSale).not.toHaveBeenCalled();
+    expect(controller.getSession().stage).toBe("prepare_failed");
+    expect(controller.getSession().message).toContain("was not sent");
+    const retry = vi.fn(async () => failure("STOCK_CHANGED"));
+    controller.replacePorts({ ...ports, checkout: { prepare: retry, finalize: vi.fn() } });
+    await controller.startPrepare(quote());
+    const second = retry.mock.calls as unknown as ReadonlyArray<
+      readonly [{ readonly transactionId?: string }, { readonly idempotencyKey?: string }]
+    >;
+    expect(second[0]?.[0]?.transactionId).toBe(first?.transactionId);
+    expect(second[0]?.[1]?.idempotencyKey).toBe(first?.prepareKey);
+    expect(resolveSale).not.toHaveBeenCalled();
+    expect(confirmCash).not.toHaveBeenCalled();
+  });
+
+  test("completed without an official receipt does not claim receipt-ready or take payment", async () => {
+    const deleteDatabase = vi.spyOn(indexedDB, "deleteDatabase");
+    const { ports, confirmCash, resolveSale, getByTransaction } = harness(async () => ({
+      ok: false as const,
+      correlationId: CORRELATION,
+      error: {
+        code: "REQUIRES_ATTENTION" as const,
+        message: "This sale is complete, but the official receipt is not on this register. Do not take payment again. Contact a manager.",
+        retryable: false,
+        nextAction: "contact_manager" as const,
+        details: { field: "receipt_missing" },
+      },
+    }));
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    expect(controller.getSession().stage).toBe("finalize_failed");
+    expect(controller.getSession().stage).not.toBe("receipt_ready");
+    expect(controller.getSession().message).toContain("official receipt");
+    expect(getByTransaction).not.toHaveBeenCalled();
+    expect(resolveSale).not.toHaveBeenCalled();
+    expect(confirmCash).not.toHaveBeenCalled();
+    expect(controller.getSession().transactionId).toBe(ports.attemptStore?.readSync()?.transactionId);
+    expect(deleteDatabase).not.toHaveBeenCalled();
+    deleteDatabase.mockRestore();
+  });
+
+  test("a prepared resolution can reach payment choice without confirming cash or minting another attempt", async () => {
+    const { ports, confirmCash, resolveSale } = harness(async () => failure("OPERATION_IN_PROGRESS"));
+    resolveSale.mockImplementation(async (transactionId: string): Promise<ApiResult<SaleResolution>> => ({
+      ok: true,
+      correlationId: CORRELATION,
+      data: { transactionId, status: "prepared", saleId: "sale-50104", orderReference: "50104" },
+    }));
+    const controller = createCashCheckoutController(ports);
+    await controller.startPrepare(quote());
+    const saved = ports.attemptStore?.readSync();
+    expect(controller.getSession().stage).toBe("choose_payment");
+    expect(confirmCash).not.toHaveBeenCalled();
+    const again = vi.fn();
+    controller.replacePorts({ ...ports, checkout: { prepare: again, finalize: vi.fn() } });
+    await controller.startPrepare(quote());
+    expect(again).not.toHaveBeenCalled();
+    expect(ports.attemptStore?.readSync()?.transactionId).toBe(saved?.transactionId);
+    expect(ports.attemptStore?.readSync()?.prepareKey).toBe(saved?.prepareKey);
+  });
 });

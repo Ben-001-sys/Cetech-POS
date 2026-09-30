@@ -97,7 +97,7 @@ describe("R9 mounted checkout OperationJournal", () => {
     expect(diagnostics.recommendedActions).toContain("RESOLVE_PENDING_OPERATIONS");
   });
 
-  test("nonterminal prepared resolution keeps the same response-unknown prepare blocked", async () => {
+  test("recovered prepared resolution acknowledges the prepare journal row", async () => {
     const db = uniqueDb();
     const journal = createOperationJournal(db);
 
@@ -142,10 +142,72 @@ describe("R9 mounted checkout OperationJournal", () => {
 
     const resolution = await recoveryPorts.sales.resolve(TX);
     expect(resolution.ok).toBe(true);
-    const pending = await journal.pending();
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.status).toBe("requires_attention");
+    expect(await journal.pending()).toHaveLength(0);
+    expect((await db.journal.get(KEY))?.status).toBe("acknowledged");
+  });
+
+  test("a proven pre-effect failure does not leave the journal response-unknown", async () => {
+    const db = uniqueDb();
+    const journal = createOperationJournal(db);
+    const ports = createBrowserCashCheckoutPorts({
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            correlationId: CORR,
+            error: {
+              code: "INTEGRATION_UNAVAILABLE",
+              message: "catalog presentation is unavailable",
+              retryable: true,
+              nextAction: "resolve",
+              details: { field: "pre_effect" },
+            },
+          }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        ),
+      scope: LOCAL_CHECKOUT_SCOPE,
+      journal,
+    });
+    const result = await ports.checkout.prepare(prepareInput(), { idempotencyKey: KEY, correlationId: CORR });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected pre-effect failure");
+    expect(result.error.details?.field).toBe("pre_effect");
+    expect(await journal.pending()).toHaveLength(0);
+    expect((await db.journal.get(KEY))?.status).toBe("acknowledged");
+  });
+
+  test("finalizing and payment_pending resolutions keep blocking journal evidence", async () => {
+    const db = uniqueDb();
+    const journal = createOperationJournal(db);
+    const ambiguousPorts = createBrowserCashCheckoutPorts({
+      fetchImpl: async () => {
+        throw new TypeError("simulated response loss");
+      },
+      scope: LOCAL_CHECKOUT_SCOPE,
+      journal,
+    });
+    await ambiguousPorts.checkout.prepare(prepareInput(), { idempotencyKey: KEY, correlationId: CORR });
+    const recoveryPorts = createBrowserCashCheckoutPorts({
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            correlationId: CORR,
+            data: {
+              transactionId: TX,
+              status: "finalizing",
+              paymentId: "66666666-6666-4666-8666-666666666666",
+              message: "Completing the sale. Payment has been submitted; do not charge again.",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      scope: LOCAL_CHECKOUT_SCOPE,
+      journal,
+    });
+    await recoveryPorts.sales.resolve(TX);
     expect((await db.journal.get(KEY))?.status).toBe("requires_attention");
+    expect(await journal.pending()).toHaveLength(1);
   });
 
   test("resolved not-found sale acknowledges prepare and clears the tender lease", async () => {

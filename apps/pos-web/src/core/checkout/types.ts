@@ -164,7 +164,15 @@ export type CommandScopeBinding = {
 };
 
 /** Known commercial effect of one sale.prepare attempt. Stored inside outcome, not a second intent. */
-export type PrepareEffectCertainty = "none" | "unknown" | "not_found" | "prepared" | "completed";
+export type PrepareEffectCertainty =
+  | "none"
+  | "unknown"
+  | "not_found"
+  | "prepared"
+  | "payment_pending"
+  | "finalizing"
+  | "completed"
+  | "cancelled";
 
 export type PrepareOperationDiagnostic = {
   readonly organizationId: Id;

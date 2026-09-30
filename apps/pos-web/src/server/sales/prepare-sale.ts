@@ -7,7 +7,9 @@ import type {
   PrepareSaleRequest,
   Quote,
   ReceiptLine,
+  ReceiptSnapshot,
   SaleResolution,
+  Uuid,
 } from "../../../../../docs/contracts/domain.generated";
 import { customerReceiptPlaceLabel } from "../../core/receipt/customer-presentation";
 import { loadSalePresentation } from "../../core/receipt/build-receipt-line";
@@ -20,8 +22,8 @@ import {
 import { canonicalJson, sha256Hex } from "../../local/canonical";
 import { toIsoTimestamp } from "../auth/ids";
 import { apiFailure } from "../http/api-failure";
-import { moneyEqual, type CheckoutStore, type StaffActor } from "../../core/checkout/types";
-import { isDefinitivePreEffectRejection, prepareEffectEvidence } from "./prepare-effect";
+import { moneyEqual, type CheckoutStore, type PrepareEffectCertainty, type StaffActor } from "../../core/checkout/types";
+import { isDefinitivePreEffectRejection, prepareEffectEvidence, withPreEffectSignal } from "./prepare-effect";
 import { isPreparedSale, isSaleResolution } from "./schema";
 import { assertBindingMatchesPrepareRequest, assertSaleMatchesPrepareRequest } from "./transaction-scope";
 
@@ -269,40 +271,157 @@ async function recoverPrepared(input: {
   if (!resolved.ok) {
     return resolved;
   }
-  if (resolved.data.status !== "prepared" && resolved.data.status !== "finalizing" && resolved.data.status !== "completed") {
+  if (resolved.data.status !== "prepared") {
     return apiFailure(
-      "INTEGRATION_UNAVAILABLE",
-      resolved.data.message ?? "prepared sale could not be recovered after a lost response",
+      "REQUIRES_ATTENTION",
+      "This sale is not an unpaid prepared sale. Do not take payment for this attempt.",
       input.context.correlationId,
     );
   }
-  const scoped = await assertPrepareScope(input);
-  if (!scoped.ok) {
-    return scoped;
-  }
-  const quote = scoped.data.quote;
-  const intent = await input.store.getPrepareIntent(
-    input.actor.organizationId,
-    "sale.prepare",
-    input.context.idempotencyKey,
-  );
-  if (!intent || !prepareIntentMatchesRequest({
-    intent,
-    quoteId: input.request.quoteId,
-    quoteFingerprint: input.request.quoteFingerprint,
+  return materializeRemotePrepared({
+    store: input.store,
+    actor: input.actor,
     transactionId: input.request.transactionId,
-  })) {
+    correlationId: input.context.correlationId,
+    now: input.now,
+    resolution: resolved.data,
+  });
+}
+
+export const RECEIPT_MISSING =
+  "This sale is complete, but the official receipt is not on this register. Do not take payment again. Contact a manager.";
+export const CANCELLED_ATTEMPT = "This sale was cancelled. The cart is unchanged.";
+export const PAYMENT_ALREADY_SUBMITTED = "Completing the sale. Payment has been submitted; do not charge again.";
+export const PAYMENT_ALREADY_PENDING = "A payment is already pending for this sale. Do not confirm cash again.";
+
+export async function findOfficialReceipt(
+  store: CheckoutStore,
+  transactionId: Uuid,
+): Promise<ReceiptSnapshot | undefined> {
+  const sale = await store.getSale(transactionId);
+  if (sale?.receipt && sale.receipt.transactionId === transactionId && sale.receipt.id.length > 0) {
+    return sale.receipt;
+  }
+  const stored = await store.getReceipt(transactionId);
+  if (stored && stored.transactionId === transactionId && stored.id.length > 0) {
+    return stored;
+  }
+  return undefined;
+}
+
+/**
+ * Persist a payment-ready prepared sale only from the durable intent, the stored quote,
+ * and the remote sale identity. Never from the current catalog.
+ */
+export async function materializeRemotePrepared(input: {
+  readonly store: CheckoutStore;
+  readonly actor: StaffActor;
+  readonly transactionId: Uuid;
+  readonly correlationId: Uuid;
+  readonly now: Date;
+  readonly resolution: SaleResolution;
+}): Promise<ApiResult<PreparedSale>> {
+  const local = await input.store.getSale(input.transactionId);
+  if (local) {
+    if (local.organizationId !== input.actor.organizationId || !input.actor.locationIds.includes(local.locationId)) {
+      return apiFailure("FORBIDDEN", "sale location is out of staff scope", input.correlationId);
+    }
+    const operation = await input.store.findSalePrepareOperation(input.transactionId);
+    if (operation && operation.status !== "acknowledged") {
+      await input.store.acknowledgeIdempotency(
+        input.actor.organizationId,
+        "sale.prepare",
+        operation.idempotencyKey,
+        local.prepared,
+      );
+    }
+    return { ok: true, data: local.prepared, correlationId: input.correlationId };
+  }
+  if (input.resolution.status !== "prepared" || !input.resolution.saleId || !input.resolution.orderReference) {
     return apiFailure(
       "REQUIRES_ATTENTION",
-      "durable sale-time presentation is missing for this prepare intent; current catalog cannot substitute",
-      input.context.correlationId,
+      "The remote prepared sale is missing a sale id or order reference, so payment stays closed.",
+      input.correlationId,
+    );
+  }
+  const operation = await input.store.findSalePrepareOperation(input.transactionId);
+  const intent = operation
+    ? await input.store.getPrepareIntent(operation.organizationId, "sale.prepare", operation.idempotencyKey)
+    : undefined;
+  if (!operation || !intent || intent.transactionId !== input.transactionId || intent.lines.length === 0) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "Durable sale-time presentation is missing, so this prepared sale cannot be opened for payment.",
+      input.correlationId,
+    );
+  }
+  const quote = await input.store.getQuote(intent.quoteId);
+  if (
+    !quote ||
+    quote.fingerprint !== intent.quoteFingerprint ||
+    Date.parse(quote.expiresAt) <= input.now.getTime() ||
+    !quote.purchasable
+  ) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "The stored quote is no longer valid, so this prepared sale cannot be opened for payment. Current catalog data was not used.",
+      input.correlationId,
+    );
+  }
+  const quoteLineIds = quote.lines.map((line) => line.lineId);
+  if (
+    quoteLineIds.length !== intent.lineIds.length ||
+    quoteLineIds.some((lineId, index) => lineId !== intent.lineIds[index])
+  ) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "Durable sale-time presentation does not match the stored quote, so payment stays closed.",
+      input.correlationId,
+    );
+  }
+  const binding = await input.store.lookupCommandScope({
+    transactionId: input.transactionId,
+    operation: "sale.prepare",
+  });
+  const shift = binding?.shiftId ? await input.store.getShift(binding.shiftId) : undefined;
+  if (!binding?.registerId || !shift) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "The register or shift for this prepared sale is missing, so payment stays closed.",
+      input.correlationId,
+    );
+  }
+  const request: PrepareSaleRequest = {
+    transactionId: input.transactionId,
+    registerId: binding.registerId,
+    shiftId: shift.id,
+    deviceId: shift.deviceId,
+    quoteId: intent.quoteId,
+    quoteFingerprint: intent.quoteFingerprint,
+  };
+  const context: CommandContext = {
+    idempotencyKey: operation.idempotencyKey,
+    correlationId: input.correlationId,
+  };
+  const scoped = await assertPrepareScope({
+    store: input.store,
+    actor: input.actor,
+    request,
+    context,
+    now: input.now,
+  });
+  if (!scoped.ok) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "This prepared sale cannot be opened for payment from the stored quote and register. Current catalog data was not used.",
+      input.correlationId,
     );
   }
   const prepared: PreparedSale = {
-    transactionId: input.request.transactionId,
-    saleId: resolved.data.saleId ?? `recovered-${input.request.transactionId.slice(0, 8)}`,
-    orderReference: resolved.data.orderReference ?? resolved.data.saleId ?? input.request.transactionId,
-    quoteFingerprint: input.request.quoteFingerprint,
+    transactionId: input.transactionId,
+    saleId: input.resolution.saleId,
+    orderReference: input.resolution.orderReference,
+    quoteFingerprint: intent.quoteFingerprint,
     total: quote.total,
     status: "prepared",
     stockCommitment: "reserved",
@@ -310,17 +429,43 @@ async function recoverPrepared(input: {
     expiresAt: quote.expiresAt,
   };
   if (!isPreparedSale(prepared)) {
-    return apiFailure("INTEGRATION_UNAVAILABLE", "recovered PreparedSale is invalid", input.context.correlationId);
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "The recovered prepared sale is not valid, so payment stays closed.",
+      input.correlationId,
+    );
   }
-  return persistPrepared({
+  const persisted = await persistPrepared({
     store: input.store,
     actor: input.actor,
-    request: input.request,
+    request,
     prepared,
     quote,
     lines: intent.lines,
-    context: input.context,
+    context,
   });
+  if (!persisted.ok) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "The prepared sale could not be saved on this register, so payment stays closed.",
+      input.correlationId,
+    );
+  }
+  const saved = await input.store.getSale(input.transactionId);
+  if (!saved || saved.prepared.transactionId !== input.transactionId) {
+    return apiFailure(
+      "REQUIRES_ATTENTION",
+      "The prepared sale was not stored, so payment stays closed.",
+      input.correlationId,
+    );
+  }
+  await input.store.acknowledgeIdempotency(
+    input.actor.organizationId,
+    "sale.prepare",
+    operation.idempotencyKey,
+    persisted.data,
+  );
+  return persisted;
 }
 
 async function assertPrepareScope(input: {
@@ -572,11 +717,12 @@ async function settleSentPrepare(input: {
       errorCode,
       message: input.failure?.error.message ?? "Prepare failed before any commercial request was sent",
     });
-    return input.failure ?? apiFailure(
+    const failure = input.failure ?? apiFailure(
       "INTEGRATION_UNAVAILABLE",
       "Prepare failed before any commercial request was sent",
       input.context.correlationId,
     );
+    return withPreEffectSignal(failure);
   }
 
   let resolved: ApiResult<SaleResolution> | undefined;
@@ -600,28 +746,24 @@ async function settleSentPrepare(input: {
   }
 
   const remoteStatus = resolved.data.status;
-  if (remoteStatus === "prepared" || remoteStatus === "finalizing") {
+  if (remoteStatus === "prepared") {
     let recovered: ApiResult<PreparedSale> | undefined;
     try {
       recovered = await recoverPrepared({ ...input, knownResolution: resolved });
     } catch {
       recovered = undefined;
     }
-    if (recovered?.ok) {
-      await input.store.acknowledgeIdempotency(
-        input.actor.organizationId,
-        "sale.prepare",
-        input.context.idempotencyKey,
-        recovered.data,
-      );
+    if (recovered?.ok && (await input.store.getSale(input.request.transactionId))) {
       return recovered;
     }
     await recordPrepareOutcome(input, {
       status: "requires_attention",
-      effectCertainty: "unknown",
+      effectCertainty: "prepared",
       errorCode: recovered && !recovered.ok ? recovered.error.code : "REQUIRES_ATTENTION",
       remoteStatus,
-      message: recovered && !recovered.ok ? recovered.error.message : resolved.data.message,
+      message: recovered && !recovered.ok
+        ? recovered.error.message
+        : "The remote sale is prepared, but it could not be stored for payment.",
     });
     if (recovered && !recovered.ok && recovered.error.code === "REQUIRES_ATTENTION") {
       return recovered;
@@ -633,19 +775,64 @@ async function settleSentPrepare(input: {
     );
   }
 
-  if (remoteStatus === "completed") {
+  if (remoteStatus === "finalizing") {
     await recordPrepareOutcome(input, {
-      status: "acknowledged",
-      effectCertainty: "completed",
+      status: "requires_attention",
+      effectCertainty: "finalizing",
       errorCode: "OPERATION_IN_PROGRESS",
       remoteStatus,
-      message: resolved.data.message,
+      paymentId: resolved.data.paymentId,
+      message: PAYMENT_ALREADY_SUBMITTED,
     });
     return apiFailure(
       "OPERATION_IN_PROGRESS",
-      "This sale is already complete. Load the existing receipt.",
+      PAYMENT_ALREADY_SUBMITTED,
       input.context.correlationId,
     );
+  }
+
+  if (remoteStatus === "payment_pending") {
+    await recordPrepareOutcome(input, {
+      status: "requires_attention",
+      effectCertainty: "payment_pending",
+      errorCode: "OPERATION_IN_PROGRESS",
+      remoteStatus,
+      paymentId: resolved.data.paymentId,
+      message: PAYMENT_ALREADY_PENDING,
+    });
+    return apiFailure(
+      "OPERATION_IN_PROGRESS",
+      PAYMENT_ALREADY_PENDING,
+      input.context.correlationId,
+    );
+  }
+
+  if (remoteStatus === "completed") {
+    const receipt = await findOfficialReceipt(input.store, input.request.transactionId);
+    if (receipt) {
+      await recordPrepareOutcome(input, {
+        status: "acknowledged",
+        effectCertainty: "completed",
+        errorCode: "OPERATION_IN_PROGRESS",
+        remoteStatus,
+        paymentId: resolved.data.paymentId,
+        message: resolved.data.message,
+      });
+      return apiFailure(
+        "OPERATION_IN_PROGRESS",
+        "This sale is already complete. Load the existing receipt.",
+        input.context.correlationId,
+      );
+    }
+    await recordPrepareOutcome(input, {
+      status: "requires_attention",
+      effectCertainty: "completed",
+      errorCode: "REQUIRES_ATTENTION",
+      remoteStatus,
+      paymentId: resolved.data.paymentId,
+      message: RECEIPT_MISSING,
+    });
+    return apiFailure("REQUIRES_ATTENTION", RECEIPT_MISSING, input.context.correlationId, { field: "receipt_missing" });
   }
 
   if (remoteStatus === "not_found") {
@@ -664,11 +851,23 @@ async function settleSentPrepare(input: {
     );
   }
 
+  if (remoteStatus === "cancelled") {
+    await recordPrepareOutcome(input, {
+      status: "acknowledged",
+      effectCertainty: "cancelled",
+      errorCode: "NOT_FOUND",
+      remoteStatus,
+      message: CANCELLED_ATTEMPT,
+    });
+    return apiFailure("NOT_FOUND", CANCELLED_ATTEMPT, input.context.correlationId, { field: "sale_cancelled" });
+  }
+
   await recordPrepareOutcome(input, {
     status: "requires_attention",
     effectCertainty: "unknown",
     errorCode: input.failure?.error.code ?? "REQUIRES_ATTENTION",
     remoteStatus,
+    paymentId: resolved.data.paymentId,
     message: resolved.data.message ?? "Prepare response is unknown",
   });
   return apiFailure(
@@ -688,9 +887,10 @@ async function recordPrepareOutcome(
   },
   evidence: {
     readonly status: "pending" | "requires_attention" | "acknowledged";
-    readonly effectCertainty: "none" | "unknown" | "not_found" | "prepared" | "completed";
+    readonly effectCertainty: PrepareEffectCertainty;
     readonly errorCode: string;
     readonly remoteStatus?: string;
+    readonly paymentId?: Uuid;
     readonly message?: string;
   },
 ): Promise<void> {
@@ -713,6 +913,7 @@ async function recordPrepareOutcome(
       idempotencyKey: input.context.idempotencyKey,
       errorCode: evidence.errorCode,
       remoteStatus: evidence.remoteStatus,
+      paymentId: evidence.paymentId,
       message: evidence.message,
     }),
   });

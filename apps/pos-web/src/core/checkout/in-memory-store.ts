@@ -1,5 +1,6 @@
 import type { Id, PendingOperation, Quote, ReceiptSnapshot, ShiftReport, Uuid } from "../../../../../docs/contracts/domain.generated";
 import { isPrepareIntentSnapshot, type PrepareIntentSnapshot } from "../receipt/prepare-intent";
+import { claimKindForExistingPrepare } from "./prepare-claim";
 import { mergeStoredPayment, mergeStoredSale } from "./monotonic";
 import type {
   CommandScopeBinding,
@@ -460,13 +461,18 @@ export function createInMemoryCheckoutStore(): FaultInjectingCheckoutStore {
       if (row.requestHash !== requestHash) {
         return { kind: "conflict" };
       }
-      if (row.status === "sent") {
+      const kind = claimKindForExistingPrepare({
+        status: row.status,
+        outcome: row.outcome,
+        intentPresent: isPrepareIntentSnapshot(row.intentSnapshot),
+      });
+      if (kind === "in_progress") {
         return { kind: "in_progress" };
       }
-      if (row.status === "acknowledged") {
+      if (kind === "replay") {
         return { kind: "replay", outcome: row.outcome };
       }
-      if (row.status === "requires_attention") {
+      if (kind === "repair") {
         return { kind: "repair", outcome: row.outcome };
       }
       return { kind: "acquired" };

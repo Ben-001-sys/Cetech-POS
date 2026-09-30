@@ -143,6 +143,15 @@ function shouldResolveFailure(failure: ApiFailure): boolean {
   return failure.error.nextAction === "resolve";
 }
 
+function isProvenPreEffect(failure: ApiFailure): boolean {
+  return failure.error.details?.field === "pre_effect";
+}
+
+const PRE_EFFECT_MESSAGE = "The sale was not sent. Try Pay again on this same cart.";
+const CANCELLED_CART_MESSAGE = "This sale was cancelled. The cart is unchanged.";
+const RECEIPT_MISSING_MESSAGE =
+  "This sale is complete, but the official receipt is not on this register. Do not take payment again. Contact a manager.";
+
 function paymentVerified(state: PaymentState): boolean {
   return state.status === "verified";
 }
@@ -359,6 +368,14 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
       return;
     }
     if (!outcome.value.ok) {
+      if (isProvenPreEffect(outcome.value)) {
+        patch({
+          stage: "prepare_failed",
+          message: PRE_EFFECT_MESSAGE,
+          transactionId: identities.transactionId,
+        });
+        return;
+      }
       if (shouldResolveFailure(outcome.value)) {
         patch({
           stage: "resolving_sale",
@@ -420,9 +437,9 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
         stage: "finalizing",
         saleCompleted: false,
         transactionId: resolution.transactionId,
-        message: "Completing the sale. Payment has been submitted; do not charge again.",
+        message: resolution.message ?? "Completing the sale. Payment has been submitted; do not charge again.",
       });
-      if (paymentId) {
+      if (paymentId && session.prepared) {
         await finalizeUnlocked();
       }
       return;
@@ -542,6 +559,13 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
         attempt.finalize,
       ),
     );
+    if (outcome.kind === "result" && !outcome.value.ok && isProvenPreEffect(outcome.value)) {
+      patch({
+        stage: "finalize_failed",
+        message: PRE_EFFECT_MESSAGE,
+      });
+      return;
+    }
     if (outcome.kind === "unknown" || (outcome.kind === "result" && !outcome.value.ok && shouldResolveFailure(outcome.value))) {
       await resolveSaleUnlocked();
       return;
@@ -730,12 +754,40 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
             attempt.prepare,
           ),
         );
+        if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.details?.field === "pre_effect") {
+          patch({
+            stage: "prepare_failed",
+            message: PRE_EFFECT_MESSAGE,
+            transactionId: attempt.transactionId,
+            prepared: undefined,
+          });
+          return;
+        }
         if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.details?.field === "remote_sale") {
           retireAttempt();
           patch({
             stage: "prepare_failed",
             message: "The previous sale attempt was not found. The cart is unchanged.",
             prepared: undefined,
+          });
+          return;
+        }
+        if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.details?.field === "sale_cancelled") {
+          retireAttempt();
+          patch({
+            stage: "prepare_failed",
+            message: CANCELLED_CART_MESSAGE,
+            prepared: undefined,
+          });
+          return;
+        }
+        if (outcome.kind === "result" && !outcome.value.ok && outcome.value.error.details?.field === "receipt_missing") {
+          patch({
+            stage: "finalize_failed",
+            message: RECEIPT_MISSING_MESSAGE,
+            transactionId: attempt.transactionId,
+            receipt: undefined,
+            saleCompleted: false,
           });
           return;
         }
@@ -747,7 +799,7 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
           });
           return;
         }
-        if (outcome.kind === "unknown" || (outcome.kind === "result" && !outcome.value.ok && shouldResolveFailure(outcome.value))) {
+        if (outcome.kind === "unknown" || (outcome.kind === "result" && !outcome.value.ok && shouldResolveFailure(outcome.value) && !isProvenPreEffect(outcome.value))) {
           await resolveSaleUnlocked();
           return;
         }

@@ -111,6 +111,10 @@ async function finishJournalEffect<T>(
     return;
   }
   try {
+    if (!result.ok && result.error.details?.field === "pre_effect") {
+      await options.journal.markAcknowledged(operationId);
+      return;
+    }
     if (!result.ok && result.error.nextAction === "resolve") {
       await options.journal.markResponseUnknown(operationId);
       return;
@@ -168,27 +172,28 @@ async function reconcileSaleJournal(
     return;
   }
 
-  const saleIsTerminal = result.data.status === "completed" || result.data.status === "cancelled";
   for (const row of rows) {
     try {
       const isPaymentRow = row.operation.startsWith("payment.");
+      if (result.data.status === "prepared" && row.operation === "sale.prepare") {
+        await options.journal.markAcknowledged(row.id);
+        continue;
+      }
       if (result.data.status === "completed") {
         await options.journal.markAcknowledged(row.id);
         continue;
       }
-      if (result.data.status === "not_found") {
+      if (result.data.status === "not_found" || result.data.status === "cancelled") {
         if (isPaymentRow) {
           await options.journal.markRequiresAttention(
             row.id,
-            "Payment work exists but the sale was not found; manager review is required",
+            result.data.status === "cancelled"
+              ? "Payment work exists but the sale was cancelled; manager review is required"
+              : "Payment work exists but the sale was not found; manager review is required",
           );
         } else {
           await options.journal.markAcknowledged(row.id);
         }
-        continue;
-      }
-      if (saleIsTerminal && !isPaymentRow) {
-        await options.journal.markAcknowledged(row.id);
         continue;
       }
       await options.journal.markRequiresAttention(

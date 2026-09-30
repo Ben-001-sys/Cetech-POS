@@ -1,6 +1,10 @@
 import type { ApiFailure, Uuid } from "../../../../../docs/contracts/domain.generated";
 import type { PrepareEffectCertainty } from "../../core/checkout/types";
 
+export { effectCertaintyOf } from "../../core/checkout/prepare-claim";
+
+export const PRE_EFFECT_FIELD = "pre_effect";
+
 const PRE_EFFECT_CODES = new Set<ApiFailure["error"]["code"]>([
   "VALIDATION_ERROR",
   "AUTH_REQUIRED",
@@ -26,12 +30,34 @@ export function isDefinitivePreEffectRejection(failure: ApiFailure): boolean {
   );
 }
 
+export function isProvenPreEffectFailure(failure: ApiFailure): boolean {
+  return failure.error.details?.field === PRE_EFFECT_FIELD;
+}
+
+/** Keep the original code. The field tells clients this failure happened before any commercial send. */
+export function withPreEffectSignal(failure: ApiFailure): ApiFailure {
+  if (failure.error.nextAction !== "resolve" || isProvenPreEffectFailure(failure)) {
+    return failure;
+  }
+  return {
+    ...failure,
+    error: {
+      ...failure.error,
+      details: {
+        ...failure.error.details,
+        field: PRE_EFFECT_FIELD,
+      },
+    },
+  };
+}
+
 export type PrepareEffectEvidence = {
   readonly effectCertainty: PrepareEffectCertainty;
   readonly transactionId: Uuid;
   readonly idempotencyKey: Uuid;
   readonly errorCode: string;
   readonly remoteStatus?: string;
+  readonly paymentId?: Uuid;
   readonly message?: string;
 };
 
@@ -41,6 +67,7 @@ export function prepareEffectEvidence(input: {
   readonly idempotencyKey: Uuid;
   readonly errorCode: string;
   readonly remoteStatus?: string;
+  readonly paymentId?: Uuid;
   readonly message?: string;
 }): PrepareEffectEvidence {
   return {
@@ -49,23 +76,7 @@ export function prepareEffectEvidence(input: {
     idempotencyKey: input.idempotencyKey,
     errorCode: input.errorCode,
     ...(input.remoteStatus ? { remoteStatus: input.remoteStatus } : {}),
+    ...(input.paymentId ? { paymentId: input.paymentId } : {}),
     ...(input.message ? { message: input.message } : {}),
   };
-}
-
-export function effectCertaintyOf(outcome: unknown): PrepareEffectCertainty | undefined {
-  if (outcome === null || typeof outcome !== "object" || !("effectCertainty" in outcome)) {
-    return undefined;
-  }
-  const value = (outcome as { effectCertainty?: unknown }).effectCertainty;
-  if (
-    value === "none" ||
-    value === "unknown" ||
-    value === "not_found" ||
-    value === "prepared" ||
-    value === "completed"
-  ) {
-    return value;
-  }
-  return undefined;
 }

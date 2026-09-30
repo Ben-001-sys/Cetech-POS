@@ -22,6 +22,7 @@ import type {
   StoredRegister,
   StoredShift,
 } from "../../core/checkout/types";
+import { claimKindForExistingPrepare } from "../../core/checkout/prepare-claim";
 import { isPrepareIntentSnapshot, type PrepareIntentSnapshot } from "../../core/receipt/prepare-intent";
 
 export type SupabaseCheckoutStoreOptions = {
@@ -920,13 +921,18 @@ function claimFromRow(row: RestRow, requestHash: string): IdempotencyClaim {
   if (typeof row.request_hash !== "string" || row.request_hash !== requestHash) {
     return { kind: "conflict" };
   }
-  if (row.status === "sent") {
+  const kind = claimKindForExistingPrepare({
+    status: typeof row.status === "string" ? row.status : "",
+    outcome: row.outcome,
+    intentPresent: parseIntentSnapshot(row.intent_snapshot) !== undefined,
+  });
+  if (kind === "in_progress") {
     return { kind: "in_progress" };
   }
-  if (row.status === "acknowledged") {
+  if (kind === "replay") {
     return { kind: "replay", outcome: row.outcome };
   }
-  if (row.status === "requires_attention") {
+  if (kind === "repair") {
     return { kind: "repair", outcome: row.outcome };
   }
   return { kind: "acquired" };

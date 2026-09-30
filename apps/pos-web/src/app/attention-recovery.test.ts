@@ -238,7 +238,7 @@ describe("UX-04 attention recovery identity", () => {
     expect(terminalUpdateDecision.safe).toBe(true);
   });
 
-  test("reload recovery keeps both the journal gate and tender lease for nonterminal prepared sale", async () => {
+  test("reload recovery acknowledges a safely prepared sale and keeps the tender lease", async () => {
     const name = uniqueDbName();
     const firstDb = openPosLocalDatabase(name);
     const firstJournal = createOperationJournal(firstDb, {
@@ -313,13 +313,14 @@ describe("UX-04 attention recovery identity", () => {
       },
     });
 
-    expect((await reloadedJournal.pending())[0]?.status).toBe("requires_attention");
-    expect(hasBlockingLocalTransactionRecovery(afterRecoveryItems)).toBe(true);
+    expect(await reloadedJournal.pending()).toHaveLength(0);
+    expect((await reloadedDb.journal.get("55555555-5555-4555-8555-555555555555"))?.status).toBe("acknowledged");
+    expect(hasBlockingLocalTransactionRecovery(afterRecoveryItems)).toBe(false);
     const nonterminalTenderActive = await hasActiveTender(reloadedDb);
     expect(nonterminalTenderActive).toBe(true);
     const nonterminalUpdateDecision = assessUpdateActivation({
       activeTender: nonterminalTenderActive,
-      criticalOperationCount: 1,
+      criticalOperationCount: 0,
       syncMutationInProgress: false,
       localMigrationInProgress: false,
       activeWindow: true,
