@@ -45,6 +45,7 @@ async function lookupHistoric(
     sessionStore: input.sessionStore,
     allowedOrigins: [ORIGIN],
     checkoutStore: runtime.checkoutStore,
+    returnStore: runtime.returnStore,
     assignments: input.assignments ?? cashierAssignments(),
   });
 }
@@ -75,6 +76,7 @@ describe("R8-02 historic return-sale lookup", () => {
         sessionStore: runtime.sessions.store,
         allowedOrigins: [ORIGIN],
         checkoutStore: runtime.checkoutStore,
+        returnStore: runtime.returnStore,
         assignments: cashierAssignments(),
       };
       if (url.includes("/api/pos/v1/returns/history/")) {
