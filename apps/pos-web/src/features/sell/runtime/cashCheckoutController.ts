@@ -257,12 +257,24 @@ export function createCashCheckoutController(ports: CashCheckoutPorts) {
       record.stage === "resolving_payment" ||
       record.stage === "cancelling" ||
       record.stage === "printing";
+    const restoredCompletedWithoutReceipt =
+      record.saleCompleted &&
+      (record.stage === "complete" ||
+        record.stage === "receipt_ready" ||
+        record.stage === "printing" ||
+        record.stage === "print_failed");
     session = {
       ...idleCheckoutSession(),
-      stage: inFlight ? "resolving_sale" : record.stage,
+      stage: inFlight
+        ? "resolving_sale"
+        : restoredCompletedWithoutReceipt
+          ? "receipt_failed"
+          : record.stage,
       message: inFlight
         ? "Sale status is uncertain. Do not start another sale."
-        : record.message,
+        : restoredCompletedWithoutReceipt
+          ? "The sale is complete. Load the official receipt or start a new sale. Do not take payment again."
+          : record.message,
       prepared: record.prepared,
       transactionId: record.transactionId,
       saleCompleted: record.saleCompleted,
