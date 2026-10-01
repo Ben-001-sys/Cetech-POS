@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ApiResult } from "../../../docs/contracts/ports";
 import type { CatalogSyncPage } from "../../../apps/pos-web/src/core/catalog/sync-page";
 import { mapBridgeCatalogItem } from "../../../apps/pos-web/src/server/catalog/map-bridge-catalog";
@@ -108,8 +108,9 @@ describe("catalog producer page sizing", () => {
       fetchPage,
     });
 
-    await Promise.resolve();
-    expect(fetchCalls).toBe(1);
+    await vi.waitFor(() => {
+      expect(fetchCalls).toBe(1);
+    });
     releaseFirstPage?.();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
