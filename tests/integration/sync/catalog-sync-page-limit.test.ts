@@ -77,6 +77,52 @@ function unavailable(): ApiResult<CatalogSyncPage> {
 }
 
 describe("catalog producer page sizing", () => {
+
+  test("coalesces overlapping forced rebuilds for the same local database", async () => {
+    const db = uniqueDb();
+    let releaseFirstPage: (() => void) | undefined;
+    const firstPageGate = new Promise<void>((resolve) => {
+      releaseFirstPage = resolve;
+    });
+    const queries: Array<{ cursor?: string; limit?: number }> = [];
+    let fetchCalls = 0;
+    const fetchPage = async (query: { cursor?: string; limit?: number }) => {
+      fetchCalls += 1;
+      queries.push({ cursor: query.cursor, limit: query.limit });
+      if (fetchCalls === 1) {
+        await firstPageGate;
+      }
+      return successPage([record("500", "Single-flight product")]);
+    };
+
+    const first = ensureCatalogProjection({
+      db,
+      policy: "provider_required",
+      force: true,
+      fetchPage,
+    });
+    const second = ensureCatalogProjection({
+      db,
+      policy: "provider_required",
+      force: true,
+      fetchPage,
+    });
+
+    await Promise.resolve();
+    expect(fetchCalls).toBe(1);
+    releaseFirstPage?.();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(fetchCalls).toBe(1);
+    expect(queries).toEqual([{ cursor: undefined, limit: 25 }]);
+    expect(firstResult).toEqual(secondResult);
+    expect(firstResult.availability).toBe("fresh");
+    expect(firstResult.itemCount).toBe(1);
+
+    const catalog = createLocalCatalogPort({ db, correlationId: () => CORRELATION });
+    const found = await catalog.search({ query: "Single-flight product" });
+    expect(found.ok && found.data.items).toHaveLength(1);
+  });
   test("requests 25-item pages with a bounded 20-second client deadline and does not publish an incomplete forced rebuild", async () => {
     const db = uniqueDb();
     await ensureCatalogProjection({
