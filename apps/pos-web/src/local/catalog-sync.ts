@@ -101,6 +101,11 @@ export async function inspectLocalCatalogProjection(
   };
 }
 
+const catalogProjectionSyncInFlight = new WeakMap<
+  PosLocalDatabase,
+  Promise<CatalogProjectionSyncResult>
+>();
+
 export async function ensureCatalogProjection(options: {
   readonly db?: PosLocalDatabase;
   readonly policy: CatalogSourcePolicy;
@@ -111,6 +116,30 @@ export async function ensureCatalogProjection(options: {
   readonly fetchImpl?: typeof fetch;
 }): Promise<CatalogProjectionSyncResult> {
   const db = options.db ?? openPosLocalDatabase();
+  const existing = catalogProjectionSyncInFlight.get(db);
+  if (existing) {
+    return existing;
+  }
+  const run = ensureCatalogProjectionUnlocked({ ...options, db });
+  const tracked = run.finally(() => {
+    if (catalogProjectionSyncInFlight.get(db) === tracked) {
+      catalogProjectionSyncInFlight.delete(db);
+    }
+  });
+  catalogProjectionSyncInFlight.set(db, tracked);
+  return tracked;
+}
+
+async function ensureCatalogProjectionUnlocked(options: {
+  readonly db: PosLocalDatabase;
+  readonly policy: CatalogSourcePolicy;
+  readonly fetchPage?: CatalogSyncPageFetcher;
+  readonly now?: () => Date;
+  readonly minRefreshIntervalMs?: number;
+  readonly force?: boolean;
+  readonly fetchImpl?: typeof fetch;
+}): Promise<CatalogProjectionSyncResult> {
+  const db = options.db;
   const now = options.now ?? (() => new Date());
   const minInterval = options.minRefreshIntervalMs ?? CATALOG_REFRESH_MIN_INTERVAL_MS;
   const inspection = await inspectLocalCatalogProjection(db);
