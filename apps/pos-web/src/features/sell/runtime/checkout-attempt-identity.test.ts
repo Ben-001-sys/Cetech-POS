@@ -341,6 +341,40 @@ describe("CAN-02 checkout business-attempt identity", () => {
     expect(prepareArgs(nextPrepare).transactionId).not.toBe(firstId);
   });
 
+  test("a persisted completed sale without a receipt restores into receipt recovery instead of a dead-end complete modal", async () => {
+    const db = openPosLocalDatabase(`cetech-pos-local-${crypto.randomUUID()}`);
+    const store = createCheckoutAttemptStore(db);
+    const transactionId = "77777777-7777-4777-8777-777777777777";
+    await store.write({
+      transactionId,
+      quoteId: "quote-live-1",
+      quoteFingerprint: "fp-live-1",
+      quoteTotalMinor: 300,
+      currency: "GHS",
+      registerId: "reg_a",
+      shiftId: "shift-1",
+      deviceId: "device-1",
+      prepareKey: "70000000-0000-4000-8000-000000000001",
+      prepareCorrelationId: "70000000-0000-4000-8000-000000000002",
+      cashKey: "70000000-0000-4000-8000-000000000003",
+      cashCorrelationId: "70000000-0000-4000-8000-000000000004",
+      finalizeKey: "70000000-0000-4000-8000-000000000005",
+      finalizeCorrelationId: "70000000-0000-4000-8000-000000000006",
+      paymentId: "70000000-0000-4000-8000-000000000007",
+      stage: "complete",
+      saleCompleted: true,
+      message: "The sale is complete. Loading the official receipt.",
+    });
+    const controller = createCashCheckoutController(
+      ports(vi.fn() as CashCheckoutPorts["checkout"]["prepare"], 100, store),
+    );
+    expect(controller.getSession().transactionId).toBe(transactionId);
+    expect(controller.getSession().saleCompleted).toBe(true);
+    expect(controller.getSession().stage).toBe("receipt_failed");
+    expect(controller.getSession().message).toContain("Do not take payment again");
+    expect(controller.getSession().receipt).toBeUndefined();
+  });
+
   test("sale.prepare waits until the attempt is durably stored", async () => {
     const db = openPosLocalDatabase(`cetech-pos-local-${crypto.randomUUID()}`);
     const inner = createCheckoutAttemptStore(db);
