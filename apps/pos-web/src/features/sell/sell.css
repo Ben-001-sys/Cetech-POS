@@ -8,6 +8,107 @@
   min-width: 0;
 }
 
+
+.sell-loading-workspace {
+  display: grid;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.sell-loading-head {
+  display: grid;
+  gap: 10px;
+}
+
+.sell-loading-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.sell-loading-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.sell-loading-card {
+  min-height: 168px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 16px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.sell-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 0%,
+    var(--color-border) 48%,
+    var(--color-surface-2) 100%
+  );
+  background-size: 220% 100%;
+  animation: sell-skeleton-pulse 1.25s ease-in-out infinite;
+}
+
+.sell-skeleton-search {
+  height: 50px;
+}
+
+.sell-skeleton-title {
+  height: 22px;
+  width: 88%;
+}
+
+.sell-skeleton-line {
+  height: 14px;
+  width: 72%;
+}
+
+.sell-skeleton-line.short {
+  width: 48%;
+}
+
+.sell-skeleton-price {
+  height: 24px;
+  width: 42%;
+  margin-top: 30px;
+}
+
+@keyframes sell-skeleton-pulse {
+  0% { background-position: 100% 0; }
+  100% { background-position: -120% 0; }
+}
+
+@media (max-width: 1400px) {
+  .sell-loading-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1050px) {
+  .sell-loading-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .sell-loading-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sell-skeleton {
+    animation: none;
+  }
+}
+
 .sell-runtime,
 .sell-workspace-body {
   display: flex;
