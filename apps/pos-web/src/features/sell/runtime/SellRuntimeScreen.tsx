@@ -361,8 +361,21 @@ export function SellRuntimeScreen(ports: SellSessionPorts) {
 
   if (!ready || !initialState) {
     return (
-      <div className="sell-workspace">
-        <p className="muted">Loading products…</p>
+      <div className="sell-workspace sell-loading-workspace" role="status" aria-live="polite" aria-busy="true">
+        <div className="sell-loading-head">
+          <div className="sell-skeleton sell-skeleton-search" />
+          <div className="sell-loading-label">Loading products…</div>
+        </div>
+        <div className="sell-loading-grid" aria-hidden="true">
+          {Array.from({ length: 8 }, (_, index) => (
+            <div className="sell-loading-card" key={index}>
+              <div className="sell-skeleton sell-skeleton-title" />
+              <div className="sell-skeleton sell-skeleton-line" />
+              <div className="sell-skeleton sell-skeleton-line short" />
+              <div className="sell-skeleton sell-skeleton-price" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
