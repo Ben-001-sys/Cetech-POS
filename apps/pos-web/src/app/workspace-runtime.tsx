@@ -31,7 +31,7 @@ import { ensureCatalogProjection } from "../local/catalog-sync";
 import { resolveBrowserCatalogSourcePolicy } from "../core/catalog/source-policy";
 import type { StaffRuntimeAuthority } from "../core/identity";
 import type { PosRoute } from "../ui/shell";
-import type { CatalogRebuildView } from "./catalog-rebuild-status";
+import { catalogRebuildStatusText, type CatalogRebuildView } from "./catalog-rebuild-status";
 import { usePwaLifecycle } from "./pwa-lifecycle-runtime";
 import {
   fetchCustomerDirectory,
@@ -489,20 +489,35 @@ function AttentionWorkspace({
   readonly recoveringItemId?: string | null;
   readonly onRebuildSuccess: () => void;
 }) {
+  const [catalogRebuild, setCatalogRebuild] = useState<CatalogRebuildView>({ phase: "idle" });
+  const catalogRefreshing = catalogRebuild.phase === "rebuilding";
+  const catalogStatus = catalogRebuildStatusText(catalogRebuild);
+
   return (
-    <NeedsAttentionScreen
+    <>
+      {catalogStatus ? (
+        <div
+          className={`banner ${catalogRebuild.phase === "failure" ? "danger" : catalogRebuild.phase === "stale" ? "warning" : "info"} operational-banner`}
+          role="status"
+          aria-live="polite"
+        >
+          <strong>{catalogRebuild.phase === "rebuilding" ? "Refreshing products…" : catalogRebuild.phase === "success" ? "Products refreshed." : "Product refresh status"}</strong>
+          {catalogRebuild.phase !== "rebuilding" ? <span>{catalogStatus}</span> : <span>Checking for the latest product list. You can keep this screen open.</span>}
+        </div>
+      ) : null}
+      <NeedsAttentionScreen
       items={items}
       state={state}
-      recoveringItemId={recoveringItemId}
+      recoveringItemId={catalogRefreshing ? "catalog-projection" : recoveringItemId}
       onRetryLoad={onRetryLoad}
       onRetryItem={(id) => {
-        if (id !== "catalog-projection") {
+        if (id !== "catalog-projection" || catalogRefreshing) {
           return;
         }
         void runCatalogRebuild({
           fetchImpl,
           onCatalogProjectionChange,
-          setRebuild: () => undefined,
+          setRebuild: setCatalogRebuild,
           onSuccess: onRebuildSuccess,
         });
       }}
@@ -517,6 +532,7 @@ function AttentionWorkspace({
           : undefined
       }
     />
+    </>
   );
 }
 
