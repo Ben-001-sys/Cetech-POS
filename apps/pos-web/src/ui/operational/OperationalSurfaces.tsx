@@ -268,8 +268,19 @@ export function NeedsAttentionScreen({
                   </button>
                 ) : null}
                 {item.retryAllowed && onRetryItem ? (
-                  <button className="btn" type="button" onClick={() => onRetryItem(item.id)}>
-                    Try again
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={Boolean(recoveringItemId)}
+                    aria-busy={recoveringItemId === item.id}
+                    onClick={() => {
+                      if (recoveringItemId) {
+                        return;
+                      }
+                      onRetryItem(item.id);
+                    }}
+                  >
+                    {recoveringItemId === item.id ? "Refreshing…" : "Try again"}
                   </button>
                 ) : null}
                 {item.reviewAllowed && onReviewItem ? (
