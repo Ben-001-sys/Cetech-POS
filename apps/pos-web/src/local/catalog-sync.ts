@@ -13,7 +13,7 @@ import { rebuildableCatalogClear } from "./pwa-upgrade";
 
 export const CATALOG_SYNC_STATE_KEY = "catalog-sync-state";
 export const CATALOG_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000;
-export const CATALOG_SYNC_PAGE_LIMIT = 25;
+export const CATALOG_SYNC_PAGE_LIMIT = 100;
 
 export type CatalogProjectionAvailability = "fresh" | "stale" | "unavailable";
 
