@@ -115,7 +115,7 @@ describe("catalog producer page sizing", () => {
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(fetchCalls).toBe(1);
-    expect(queries).toEqual([{ cursor: undefined, limit: 25 }]);
+    expect(queries).toEqual([{ cursor: undefined, limit: 100 }]);
     expect(firstResult).toEqual(secondResult);
     expect(firstResult.availability).toBe("fresh");
     expect(firstResult.itemCount).toBe(1);
@@ -124,7 +124,7 @@ describe("catalog producer page sizing", () => {
     const found = await catalog.search({ query: "Single-flight product" });
     expect(found.ok && found.data.items).toHaveLength(1);
   });
-  test("requests 25-item pages with a bounded 20-second client deadline and does not publish an incomplete forced rebuild", async () => {
+  test("requests 100-item pages with a bounded 20-second client deadline and does not publish an incomplete forced rebuild", async () => {
     const db = uniqueDb();
     await ensureCatalogProjection({
       db,
@@ -147,11 +147,11 @@ describe("catalog producer page sizing", () => {
       },
     });
 
-    expect(CATALOG_SYNC_PAGE_LIMIT).toBe(25);
+    expect(CATALOG_SYNC_PAGE_LIMIT).toBe(100);
     expect(CATALOG_SYNC_REQUEST_TIMEOUT_MS).toBe(20_000);
     expect(queries).toEqual([
-      { cursor: undefined, limit: 25 },
-      { cursor: "200", limit: 25 },
+      { cursor: undefined, limit: 100 },
+      { cursor: "200", limit: 100 },
     ]);
     expect(result.availability).toBe("stale");
     expect(result.itemCount).toBe(1);
