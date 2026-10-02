@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { SellRuntimeScreen, type SellSessionPorts } from "../features/sell";
+import { SellLoadingSkeleton, SellRuntimeScreen, type SellSessionPorts } from "../features/sell";
 import { createBrowserPricingPort } from "../features/sell/runtime/pricingClient";
 import {
   createBrowserCashCheckoutPorts,
@@ -40,7 +40,9 @@ import {
   createTenderActivityPort,
   ensureCashierLocalSeed,
   ensureCatalogProjection,
+  inspectLocalCatalogProjection,
   openPosLocalDatabase,
+  readCatalogSyncState,
   recallActiveCartId,
   rememberActiveCartId,
   replaceActiveCartDraft,
@@ -463,7 +465,54 @@ export function PosRuntime({
         return;
       }
       try {
+        const db = openPosLocalDatabase();
+        const [local, localState] = await Promise.all([
+          inspectLocalCatalogProjection(db),
+          readCatalogSyncState(db),
+        ]);
+        const hasUsableSavedCatalog = local.usableFor(policy);
+
+        if (hasUsableSavedCatalog) {
+          const savedAvailability =
+            localState?.availability === "unavailable"
+              ? "stale"
+              : localState?.availability ?? "stale";
+          await mountPorts(
+            savedAvailability,
+            snapshot,
+            catalogProjectionGenerationRef.current,
+          );
+          if (cancelled) {
+            return;
+          }
+
+          const synced = await ensureCatalogProjection({
+            db,
+            policy,
+            fetchImpl,
+            force: false,
+            minRefreshIntervalMs: CATALOG_REFRESH_MIN_INTERVAL_MS,
+          });
+          if (cancelled) {
+            return;
+          }
+          const generation = bumpCatalogProjectionGeneration(catalogProjectionGenerationRef, synced);
+          setProjectionAvailability(synced.availability);
+          setPorts((current) =>
+            current
+              ? {
+                  ...current,
+                  catalog: createLocalCatalogPort({ db }),
+                  catalogAvailability: synced.availability,
+                  catalogProjectionGeneration: generation,
+                }
+              : current,
+          );
+          return;
+        }
+
         const synced = await ensureCatalogProjection({
+          db,
           policy,
           fetchImpl,
           force: true,
@@ -743,7 +792,7 @@ export function PosRuntime({
             />
           </>
         ) : (
-          <p className="muted">Loading products…</p>
+          <SellLoadingSkeleton />
         )
       ) : route === "returns" ? (
         authoritativeActionsAllowed ? (
