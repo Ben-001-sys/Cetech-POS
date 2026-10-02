@@ -2,7 +2,7 @@
 
 **Updated for this testing round:** 2 October 2026 — price-check instructions revised.
 
-**Read and understand the [current Test Brief](TEST-BRIEF-2026-10-02.md) first.**
+**Read and understand the [current Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) first.**
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
 

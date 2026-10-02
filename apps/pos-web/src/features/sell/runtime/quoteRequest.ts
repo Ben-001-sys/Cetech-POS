@@ -56,7 +56,17 @@ export async function requestWholeCartQuote(
   request: QuoteRequest,
   previous: QuoteState,
 ): Promise<QuoteState> {
-  const result = await pricing.quote(request);
+  let result;
+  try {
+    result = await pricing.quote(request);
+  } catch {
+    return {
+      status: "failed",
+      revision: request.cartRevision,
+      code: "INTEGRATION_UNAVAILABLE",
+      message: "Price could not be checked. Your cart is saved. Check the price again.",
+    };
+  }
   if (!result.ok) {
     if (result.error.code === "QUOTE_EXPIRED") {
       return { status: "expired" };

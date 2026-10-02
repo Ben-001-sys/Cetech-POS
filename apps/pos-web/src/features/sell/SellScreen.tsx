@@ -86,6 +86,7 @@ export type SellScreenProps = {
   checkoutInFlight?: boolean;
   checkoutSession?: CheckoutSessionView;
   onPay?: () => void;
+  onRetryQuote?: () => void;
   onConfirmCash?: (cashReceivedText: string) => void;
   onResolveSale?: () => void;
   onResolvePayment?: () => void;
@@ -139,6 +140,7 @@ export function SellScreen({
   checkoutInFlight = false,
   checkoutSession,
   onPay,
+  onRetryQuote,
   onConfirmCash,
   onResolveSale,
   onResolvePayment,
@@ -538,6 +540,7 @@ export function SellScreen({
             checkoutInFlight={checkoutInFlight}
             clearDisabled={newSaleBlocked}
             onPay={onPay}
+            onRetryQuote={onRetryQuote}
           />
           <div className="mobile-cart-bar">
             <div>

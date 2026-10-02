@@ -21,6 +21,7 @@ export type UseCartQuoteResult = {
   readonly quote?: QuoteDisplayState;
   readonly eligibility?: CheckoutEligibilityView;
   readonly confirmedQuote?: Quote;
+  readonly retry: () => void;
 };
 
 export type StoredRemoteQuote = {
@@ -111,6 +112,8 @@ export function useCartQuote(input: UseCartQuoteInput): UseCartQuoteResult {
   const [appliedEpoch, setAppliedEpoch] = useState(0);
   const [onlineEpoch, setOnlineEpoch] = useState(0);
   const [seenOnline, setSeenOnline] = useState(input.online);
+  const [retryEpoch, setRetryEpoch] = useState(0);
+  const [appliedRetryEpoch, setAppliedRetryEpoch] = useState(0);
   if (input.online !== seenOnline) {
     setSeenOnline(input.online);
     if (input.online) {
@@ -123,7 +126,7 @@ export function useCartQuote(input: UseCartQuoteInput): UseCartQuoteResult {
   const cartRevision = input.workspace?.cartRevision;
   const revision = cartRevision ?? 0;
   const nowIso = input.now().toISOString();
-  const awaitingRevalidation = onlineEpoch !== appliedEpoch;
+  const awaitingRevalidation = onlineEpoch !== appliedEpoch || retryEpoch !== appliedRetryEpoch;
   const applicableRemote = remoteQuoteForCartRevision(remote, cartId, revision);
   const quote: QuoteState = local
     ?? (awaitingRevalidation
@@ -137,40 +140,45 @@ export function useCartQuote(input: UseCartQuoteInput): UseCartQuoteResult {
   const pricing = input.pricing;
   const locationId = input.locationId;
   const online = input.online;
+  // Restoration and catalog refresh can supply equivalent new objects. Only
+  // a changed commercial request should cancel/restart the current quote.
+  const requestKey = cartId && cartRevision !== undefined && lines
+    ? JSON.stringify(quoteRequestFromCart(cartId, cartRevision, lines, selectedCustomer, locationId))
+    : "null";
 
   useEffect(() => {
-    if (!cartId || cartRevision === undefined || !pricing || !online || !lines || lines.length === 0) {
+    if (requestKey === "null" || !pricing || !online) {
       return;
     }
-    const request = quoteRequestFromCart(cartId, cartRevision, lines, selectedCustomer, locationId);
-    if (!request) {
-      return;
-    }
+    const request = JSON.parse(requestKey) as QuoteRequest;
+    const requestCartId = request.cartId;
     const requestRevision = request.cartRevision;
-    const previous = previousConfirmedQuoteForRequest(remoteRef.current, cartId, requestRevision);
+    const previous = previousConfirmedQuoteForRequest(remoteRef.current, requestCartId, requestRevision);
     const requestEpoch = onlineEpoch;
+    const requestRetryEpoch = retryEpoch;
     let cancelled = false;
     void requestWholeCartQuote(pricing, request, previous).then((next) => {
       if (cancelled) {
         return;
       }
       const latest = remoteRef.current;
-      if (shouldIgnoreStaleQuoteResponse(latest, cartId, requestRevision)) {
+      if (shouldIgnoreStaleQuoteResponse(latest, requestCartId, requestRevision)) {
         return;
       }
       const committed: StoredRemoteQuote = {
-        cartId,
+        cartId: requestCartId,
         revision: requestRevision,
         state: next,
       };
       remoteRef.current = committed;
       setAppliedEpoch(requestEpoch);
+      setAppliedRetryEpoch(requestRetryEpoch);
       setRemote(committed);
     });
     return () => {
       cancelled = true;
     };
-  }, [cartId, cartRevision, lines, locationId, online, onlineEpoch, pricing, selectedCustomer]);
+  }, [requestKey, online, onlineEpoch, pricing, retryEpoch]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -204,5 +212,6 @@ export function useCartQuote(input: UseCartQuoteInput): UseCartQuoteResult {
     quote: quoteStateToDisplay(quote),
     eligibility,
     confirmedQuote: quote.status === "confirmed" ? quote.quote : undefined,
+    retry: () => setRetryEpoch((epoch) => epoch + 1),
   };
 }

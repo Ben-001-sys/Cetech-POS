@@ -149,6 +149,7 @@ export function CartPanel({
   checkoutInFlight = false,
   clearDisabled = false,
   onPay,
+  onRetryQuote,
 }: {
   revision: number;
   lines: readonly CartLineView[];
@@ -167,6 +168,7 @@ export function CartPanel({
   checkoutInFlight?: boolean;
   clearDisabled?: boolean;
   onPay?: () => void;
+  onRetryQuote?: () => void;
 }) {
   const confirmedTotal = quote?.status === "confirmed" ? quote.quote.total : undefined;
   const quotedLines = quote?.status === "confirmed" ? quote.quote.lines : undefined;
@@ -198,7 +200,7 @@ export function CartPanel({
           <span aria-hidden="true">›</span>
         </button>
         {quote ? (
-          <QuoteStatus quote={quote} cartLineNames={cartLineNames} />
+          <QuoteStatus quote={quote} cartLineNames={cartLineNames} onRetry={onRetryQuote} />
         ) : (
           <div className="quote-status muted" role="status">
             {lines.length === 0

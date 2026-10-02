@@ -404,6 +404,7 @@ export function SellRuntimeScreen(ports: SellSessionPorts) {
         onWorkspaceChange={persist}
         onTransitionCart={transitionActiveCart}
         quote={presentedQuote.quote}
+        onRetryQuote={presentedQuote.retry}
         eligibility={presentedQuote.eligibility}
         checkoutReady={cashCheckout.ready}
         checkoutInFlight={cashCheckout.inFlight}

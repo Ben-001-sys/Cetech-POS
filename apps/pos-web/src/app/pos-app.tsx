@@ -387,6 +387,8 @@ export function PosRuntime({
     };
   }, [loadAttention, runtime]);
 
+  const pricing = useMemo(() => createBrowserPricingPort({ fetchImpl }), [fetchImpl]);
+
   const mountPorts = useCallback(
     async (
       availability: CatalogProjectionAvailability,
@@ -435,7 +437,7 @@ export function PosRuntime({
         recallCartId: () => recallActiveCartId(db),
         replaceActiveCart: (previousCartId, next) => replaceActiveCartDraft(previousCartId, next, db),
         locationId,
-        pricing: current.presentationOnly ? undefined : createBrowserPricingPort({ fetchImpl }),
+        pricing: current.presentationOnly ? undefined : pricing,
         shiftOpen: current.presentationOnly ? false : current.shiftOpen,
         checkout: checkout?.checkout,
         payments: checkout?.payments,
@@ -448,7 +450,7 @@ export function PosRuntime({
         ...(capabilities.ok ? { paymentMethods: capabilities.data } : {}),
       });
     },
-    [fetchImpl],
+    [fetchImpl, pricing],
   );
 
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 **Updated for this testing round:** 2 October 2026 — price-check timing and retry checks added.
 
-**Read and understand the [current Test Brief](TEST-BRIEF-2026-10-02.md) first.**
+**Read and understand the [current Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) first.**
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
 
@@ -16,7 +16,7 @@ Use this same address when opening or installing the POS. If your installed POS 
 
 ## Choose your testing modules
 
-Use the current dated [Test Brief](TEST-BRIEF-2026-10-02.md) for the POS link and this round's rules.
+Use the current dated [Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) for the POS link and this round's rules.
 
 One designated **Admin** sets up staff, registers, and devices in **M00**. Once your own setup works, choose any module whose starting needs are met. You do not have to complete the whole workbook from top to bottom. Two people can choose the same module using their own registers and test records.
 

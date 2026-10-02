@@ -18,7 +18,7 @@ import type { CatalogProjectionStore } from "../catalog/catalog-projection-store
 import { isQuote, isQuoteRequest } from "./canonical-schema";
 
 export type QuoteBridge = {
-  postQuote(request: QuoteRequest, correlationId: Uuid): Promise<ApiResult<Quote>>;
+  postQuote(request: QuoteRequest, correlationId: Uuid, organizationId?: string): Promise<ApiResult<Quote>>;
 };
 
 export type HandleQuoteInput = {
@@ -35,6 +35,7 @@ export type HandleQuoteInput = {
   readonly bridge?: QuoteBridge;
   readonly snapshots?: { saveQuote(quote: Quote): Promise<void> };
   readonly catalogIdentity?: Pick<CatalogProjectionStore, "loadByItemIds">;
+  readonly onStageComplete?: (stage: string, elapsedMs: number) => void;
 };
 
 export type HandleQuoteResponse = {
@@ -44,6 +45,11 @@ export type HandleQuoteResponse = {
 };
 
 export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteResponse> {
+  async function timed<T>(stage: string, action: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    try { return await action(); }
+    finally { input.onStageComplete?.(stage, Math.round(performance.now() - started)); }
+  }
   const correlation = resolveCorrelationId(input.correlationIdHeader);
   const headers = { "Cache-Control": "no-store" as const, "X-Correlation-ID": correlation.correlationId };
   if (!correlation.ok) {
@@ -70,7 +76,7 @@ export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteR
   const sessionId = readCookie(input.cookieHeader, STAFF_SESSION_COOKIE);
   let stored = null;
   try {
-    stored = sessionId ? await input.sessionStore.get(sessionId, input.now) : null;
+    stored = sessionId ? await timed("session", () => input.sessionStore.get(sessionId, input.now)) : null;
   } catch {
     const body = authFailure("INTEGRATION_UNAVAILABLE", "staff session store is unavailable", correlation.correlationId);
     return { status: httpStatusFor(body.error.code), body, headers };
@@ -83,15 +89,16 @@ export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteR
     const body = authFailure("FORBIDDEN", "Create a new password before continuing.", correlation.correlationId);
     return { status: httpStatusFor(body.error.code), body, headers };
   }
+  const organizationId = stored.session.organizationId;
   const request = parseQuoteRequest(input.body);
   if (!request) {
     const body = authFailure("VALIDATION_ERROR", "QuoteRequest is invalid", correlation.correlationId);
     return { status: httpStatusFor(body.error.code), body, headers };
   }
-  const assignments = await input.assignments.lookup({
+  const assignments = await timed("assignments", () => input.assignments.lookup({
     actorId: stored.session.actorId,
-    organizationId: stored.session.organizationId,
-  });
+    organizationId,
+  }));
   if (assignments === "unavailable") {
     const body = authFailure(
       "INTEGRATION_UNAVAILABLE",
@@ -122,10 +129,10 @@ export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteR
   }
   let mappings;
   try {
-    mappings = await input.catalogIdentity.loadByItemIds(
-      stored.session.organizationId,
+    mappings = await timed("catalogIdentity", () => input.catalogIdentity!.loadByItemIds(
+      organizationId,
       collectQuoteIdentityItemIds(request),
-    );
+    ));
   } catch {
     const body = authFailure(
       "INTEGRATION_UNAVAILABLE",
@@ -143,7 +150,9 @@ export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteR
     const body = authFailure("INTEGRATION_UNAVAILABLE", translated.message, correlation.correlationId);
     return { status: httpStatusFor(body.error.code), body, headers };
   }
-  const result = await input.bridge.postQuote(translated.value.request, correlation.correlationId);
+  const result = await timed("bridge", () => input.bridge!.postQuote(
+    translated.value.request, correlation.correlationId, organizationId,
+  ));
   if (!result.ok) {
     return { status: httpStatusFor(result.error.code), body: result, headers };
   }
@@ -165,7 +174,7 @@ export async function handleQuote(input: HandleQuoteInput): Promise<HandleQuoteR
     return { status: httpStatusFor(body.error.code), body, headers };
   }
   if (input.snapshots) {
-    await input.snapshots.saveQuote(restored.value);
+    await timed("saveSnapshot", () => input.snapshots!.saveQuote(restored.value));
   }
   return { status: 200, body: { ok: true, data: restored.value, correlationId: result.correlationId }, headers };
 }

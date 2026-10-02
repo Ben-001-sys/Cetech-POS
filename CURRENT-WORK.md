@@ -707,3 +707,33 @@ Location lifecycle uses forward migration `20260923140000_pos_admin_topology.sql
 No persistent staging Owner was created. The next controlled runtime action is `docs/runbooks/ADMIN-105-FIRST-OWNER-BOOTSTRAP.md`.
 Screen classification is `docs/workstreams/WS-03-CORE-DATA-INTEGRATION/evidence/ADMIN-105-SCREEN-CAPABILITY-MATRIX.md`.
 Fresh `@Ben-001-sys` review is required for the exact final SHA. Older review does not carry forward.
+## STAFF-QUOTE-132 — Urgent quote latency correction
+
+Owner instruction, 2026-10-02 16:02 UTC: fix discovered defects immediately because testers are waiting, and serve the correction at the existing integration staging alias when they refresh. This bounded runtime task supersedes the earlier documentation-only freeze; it does not authorize production promotion or an integration/main merge.
+
+```text
+task: STAFF-QUOTE-132 / issue #132
+editor: @wbdevworld / WS3 senior
+branch: ws3/quote-latency-2026-10-02
+application baseline: 1021cd113c783e25030fe9c0bda1be9ddcf5888c
+allowed: src/app/pos-app.tsx, src/server/quotes/**,
+  src/app/api/pos/v1/quotes/route.ts, focused tests,
+  CURRENT-WORK.md, docs/integration/evidence/STAFF-QUOTE-132.md,
+  current docs/staff documents and formatted reading copies
+bounded consumer implementation delegation to this editor for this task:
+  src/features/sell/runtime/{useCartQuote,pricingClient,quoteRequest,SellRuntimeScreen}.*,
+  src/features/sell/{SellScreen.*,components/CartPanel.*,components/QuoteStatus.*},
+  tests/frontend/sell-quote-runtime.test.ts, e2e/sell-runtime.spec.ts
+forbidden: unrelated WS1/WS2 implementation, contract/migration/dependency changes,
+  account/register/device/order/payment/refund/stock mutations,
+  protected #102, production promotion, self-merge
+source ownership: Woo owns prices; Supabase POS operations; local drafts/journal retained
+contract/ADR changes: none; staff-documentation impact: yes
+acceptance: equivalent cart inputs do not restart quotes; bounded failures and retry;
+  current-cart/revision safety; timing evidence; same tester origin after deployment
+independent integration review: required before any integration/main merge
+```
+
+Paths beginning `src/` or `e2e/` are relative to `apps/pos-web`. The consumer delegation is limited to the owner's urgent quote correction, not a transfer of general WS1 ownership. Upstream WordPress latency must remain open until live timings prove improvement. A timeout is not proof that pricing became fast.
+
+---

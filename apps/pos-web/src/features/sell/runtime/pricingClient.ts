@@ -26,15 +26,19 @@ export function createBrowserPricingPort(options: {
   readonly csrfCookie?: string;
   readonly csrfHeader?: string;
   readonly correlationId?: () => Uuid;
+  readonly timeoutMs?: number;
 } = {}): PricingPort {
   const quoteUrl = options.quoteUrl ?? "/api/pos/v1/quotes";
   const fetchImpl = options.fetchImpl ?? fetch;
   const csrfCookie = options.csrfCookie ?? "cetech_pos_csrf";
   const csrfHeader = options.csrfHeader ?? "x-csrf-token";
   const correlationId = options.correlationId ?? (() => crypto.randomUUID());
+  const timeoutMs = options.timeoutMs ?? 60_000;
   return {
     async quote(input: QuoteRequest): Promise<ApiResult<Quote>> {
       const correlation = correlationId();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         const response = await fetchImpl(quoteUrl, {
           method: "POST",
@@ -45,6 +49,7 @@ export function createBrowserPricingPort(options: {
             [csrfHeader]: readCookie(csrfCookie) ?? "",
           },
           body: JSON.stringify(input),
+          signal: controller.signal,
         });
         const body = (await response.json()) as ApiResult<Quote>;
         return body;
@@ -53,12 +58,16 @@ export function createBrowserPricingPort(options: {
           ok: false,
           error: {
             code: "INTEGRATION_UNAVAILABLE",
-            message: "Authoritative quote transport failed.",
+            message: controller.signal.aborted
+              ? "Price check took too long. Your cart is saved. Check the price again."
+              : "Authoritative quote transport failed.",
             retryable: true,
             nextAction: "retry_same_key",
           },
           correlationId: correlation,
         };
+      } finally {
+        clearTimeout(timer);
       }
     },
   };

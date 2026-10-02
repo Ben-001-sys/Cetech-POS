@@ -1,5 +1,15 @@
 # CETECH POS staff documentation
 
+**Current testing documents updated:** 2 October 2026 — urgent price-delay qualification.
+
+**Read and understand the current Test Brief first.**
+
+The price-delay correction is under qualification. Check the brief for the confirmed live build before retesting prices.
+
+[Open the formatted testing documents](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/docs/staff-test-readable-2026-10-02/docs/staff/testing-2026-10-02#readme) — the brief, guide, and workbook.
+
+**[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
+
 These files are the **canonical staff-facing documentation** for CETECH POS.
 
 Use plain English. Teach what the person needs to do, what they should expect to happen, and what they should do next. Do not expose internal engineering language to cashiers.
@@ -7,8 +17,9 @@ Use plain English. Teach what the person needs to do, what they should expect to
 ## Which document should I use?
 
 - [Staff Training & User Guide](STAFF-TRAINING-GUIDE.md) — learn how to use the POS during normal work.
-- [Staff Testing & Acceptance Workbook](STAFF-TESTING-ACCEPTANCE-WORKBOOK.md) — follow structured tests and record Pass/Fail results.
-- [Test Brief — 24 September 2026](TEST-BRIEF-2026-09-24.md) — the short control sheet for the staff test session.
+- [Staff Testing & Acceptance Workbook](STAFF-TESTING-ACCEPTANCE-WORKBOOK.md) — choose independent testing modules and record results.
+- **[Current Test Brief — issued 2 October 2026](TEST-BRIEF-2026-10-02.md)** — the POS link, designated Admin setup, and rules for the next round.
+- [Test Brief — 24 September 2026](TEST-BRIEF-2026-09-24.md) — historical record only; do not reuse its POS link.
 - [Documentation Maintenance Policy](DOCUMENTATION-MAINTENANCE.md) — rules for keeping these guides synchronized with the application.
 
 ## Important status rule

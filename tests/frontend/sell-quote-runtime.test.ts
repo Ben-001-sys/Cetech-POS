@@ -56,6 +56,14 @@ function quoteFixture(
 }
 
 describe("FE-04 whole-cart quote revision safety", () => {
+  test("a rejected pricing adapter leaves loading and fails checkout closed", async () => {
+    const state = await requestWholeCartQuote({ quote: async () => { throw new Error("transport unavailable"); } }, {
+      cartId: CART, cartRevision: 2, customer: { kind: "walkin" }, locationId: "loc-front-1",
+      lines: [{ lineId: LINE, productId: "p-hardener", quantity: "1" }],
+    }, { status: "missing" });
+    expect(state).toMatchObject({ status: "failed", revision: 2, code: "INTEGRATION_UNAVAILABLE" });
+    expect(checkoutEligibilityFromQuote({ cartEmpty: false, shiftOpen: true, online: true, quote: state }).allowed).toBe(false);
+  });
   test("a delayed revision-1 quote cannot overwrite revision 2", () => {
     const quoting = quotingState(2);
     const late = {

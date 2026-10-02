@@ -1,6 +1,58 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectAuthoritativeShell, installAuthoritativeStaffSession } from "./staff-session";
 
+test("staff-context refresh does not restart an unchanged cart's pending price", async ({ page }) => {
+  let quoteRequests = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/pos/v1/quotes", async (route) => {
+    quoteRequests += 1;
+    const posted = route.request().postDataJSON();
+    await gate;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, correlationId: route.request().headers()["x-correlation-id"], data: quotePayload(posted, "fp-a", 1500),
+    }) });
+  });
+  await installAuthoritativeStaffSession(page);
+  await page.goto("/sell");
+  await expect(page.locator("#product-search")).toBeVisible({ timeout: 30_000 });
+  await scanHardener(page);
+  await expect(page.locator("[data-quote-status='quoting']")).toBeVisible();
+  await expect.poll(() => quoteRequests).toBe(1);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(async () => Number(await page.locator("[data-sell-restore-count]").getAttribute("data-sell-restore-count"))).toBeGreaterThan(1);
+  expect(quoteRequests).toBe(1);
+  release();
+  await expect(page.locator("[data-quote-status='confirmed']")).toBeVisible();
+  await expect(page.locator(".cart-totals")).toContainText("GHS 15.00");
+  await expect(page.getByRole("button", { name: "Pay GHS 15.00" })).toBeEnabled();
+});
+
+test("failed pricing can be retried while retaining the same cart and quantity", async ({ page }) => {
+  const postedRequests: Array<{ cartId: string; cartRevision: number; lines: Array<{ quantity: string }> }> = [];
+  await page.route("**/api/pos/v1/quotes", async (route) => {
+    const posted = route.request().postDataJSON();
+    postedRequests.push(posted);
+    const correlationId = route.request().headers()["x-correlation-id"];
+    await route.fulfill({ status: postedRequests.length === 1 ? 503 : 200, contentType: "application/json", body: JSON.stringify(
+      postedRequests.length === 1
+        ? { ok: false, correlationId, error: { code: "INTEGRATION_UNAVAILABLE", message: "Price check took too long.", retryable: true, nextAction: "retry_same_key" } }
+        : { ok: true, correlationId, data: quotePayload(posted, "fp-a", 1500) },
+    ) });
+  });
+  await installAuthoritativeStaffSession(page);
+  await page.goto("/sell");
+  await expect(page.locator("#product-search")).toBeVisible({ timeout: 30_000 });
+  await scanHardener(page);
+  await expect(page.locator("[data-quote-status='failed']")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pay", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Check price again" }).click();
+  await expect(page.locator("[data-quote-status='confirmed']")).toBeVisible();
+  expect(postedRequests).toHaveLength(2);
+  expect(postedRequests[1]).toEqual(postedRequests[0]);
+  await expect(page.getByRole("complementary", { name: "Current sale" }).locator(".qty-input")).toHaveValue("1");
+});
+
 test("Sell runtime restores workspace once and cart edits do not restore again", async ({ page }) => {
   await installAuthoritativeStaffSession(page);
   await page.goto("/sell");
