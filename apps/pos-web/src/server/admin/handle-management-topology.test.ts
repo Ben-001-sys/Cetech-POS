@@ -218,4 +218,21 @@ describe("ADMIN-105 management topology", () => {
     if (result.ok) throw new Error("manager must not create locations");
     expect(result.error.code).toBe("FORBIDDEN");
   });
+  test.each([
+    ["busy", "SHIFT_CONFLICT", "Close or resolve affected shifts"],
+    ["inactive-parent", "VALIDATION_ERROR", "Reactivate the location"],
+  ] as const)("topology mutation %s returns an actionable, scoped failure", async (failure, code, message) => {
+    const { sessions, cookieHeader } = await cookieFor("owner_a", []);
+    const result = await handleSaveManagementTopology({
+      correlationId: CORRELATION, cookieHeader, now: NOW, sessions,
+      assignments: createMemoryAssignmentDirectory([]),
+      controlPlane: createMemoryControlPlaneDirectory([{ organizationId: "org_a", actorId: "owner_a", controlRole: "owner", status: "active" }]),
+      topology: { ...topology, saveLocation: async () => failure },
+      change: { kind: "location", locationId: "loc_a1", name: "Shop", status: "inactive" },
+      protection: { origin: "https://pos.example.test", referer: null, csrfCookie: "csrf", csrfHeader: "csrf", allowedOrigins: ["https://pos.example.test"] },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) { expect(result.error.code).toBe(code); expect(result.error.message).toContain(message); }
+  });
+
 });

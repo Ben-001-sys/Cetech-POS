@@ -4,7 +4,7 @@ import type { PosRestFetch } from "../http/server-fetch";
 import { createMemoryAssignmentDirectory } from "../auth/assignments";
 import { createEphemeralInMemoryStaffSessionStore } from "../auth/session-store";
 import { createMemoryControlPlaneDirectory } from "./control-plane-directory";
-import { handleGetManagementReturnsAttention } from "./handle-management-returns-attention";
+import { handleGetManagementReturnsAttention, presentManagementReturnsAttention } from "./handle-management-returns-attention";
 import {
   createMemoryManagementReturnsAttentionDirectory,
   createSupabaseManagementReturnsAttentionDirectory,
@@ -376,6 +376,89 @@ describe("ADMIN-105 returns and attention oversight", () => {
   });
 });
 
+describe("management return action truth", () => {
+  function preview(overrides: Partial<ManagementReturnsAttentionItem> = {}) {
+    return item({
+      id: "return:approval", category: "return", priority: "pending",
+      persistedStatus: "approval_required", approvalState: "required",
+      returnId: "33333333-3333-4333-8333-333333333333",
+      previewExpiresAt: "2026-09-22T16:15:00.000Z",
+      ...overrides,
+    });
+  }
+
+  test("only a current approval-required preview at a managed location is approvable", () => {
+    expect(presentManagementReturnsAttention(preview(), NOW, true).canApprove).toBe(true);
+    const ownerOnly = presentManagementReturnsAttention(preview(), NOW, false);
+    expect(ownerOnly.canApprove).toBe(false);
+    expect(ownerOnly.actionUnavailableReason).toContain("Manager assignment");
+    const nonApproval = presentManagementReturnsAttention(preview({ persistedStatus: "previewed", approvalState: undefined }), NOW, true);
+    expect(nonApproval.canApprove).toBe(false);
+    expect(nonApproval.actionUnavailableReason).toContain("not a pending approval");
+    expect(presentManagementReturnsAttention(preview({ approvalState: "recorded" }), NOW, true).canApprove).toBe(false);
+  });
+
+  test("expired previews move into history with an explanation, not pending approvals", () => {
+    for (const previewExpiresAt of [NOW.toISOString(), "2026-09-21T16:15:00.000Z"]) {
+      const presented = presentManagementReturnsAttention(preview({ previewExpiresAt }), NOW, true);
+      expect(presented.canApprove).toBe(false);
+      expect(presented.previewState).toBe("expired");
+      expect(presented.priority).toBe("informational");
+      expect(presented.statusLabel).toBe("Return preview expired");
+      expect(presented.actionUnavailableReason).toContain("cannot be approved or completed");
+      expect(presented.persistedStatus).toBe("approval_required");
+    }
+  });
+
+  test("missing or invalid expiry cannot imply an approvable preview", () => {
+    for (const previewExpiresAt of [undefined, "invalid"]) {
+      const presented = presentManagementReturnsAttention(preview({ previewExpiresAt }), NOW, true);
+      expect(presented.canApprove).toBe(false);
+      expect(presented.previewState).toBe("unavailable");
+      expect(presented.actionUnavailableReason).toContain("could not be confirmed");
+    }
+  });
+
+  test("old preview expiry does not remove existing executed-return attention", () => {
+    const presented = presentManagementReturnsAttention(preview({
+      persistedStatus: "requires_attention", priority: "needs_attention", approvalState: undefined,
+      previewExpiresAt: "2026-09-21T16:15:00.000Z",
+    }), NOW, true);
+    expect(presented.priority).toBe("needs_attention");
+    expect(presented.canApprove).toBe(false);
+    expect(presented.previewState).toBeUndefined();
+    expect(presented.canReview).toBe(true);
+  });
+
+  test("refund check remains scoped and a missing exact return reference is explained", () => {
+    const refund = item({ id: "refund:a", category: "refund_reconciliation", priority: "awaiting_reconciliation", persistedStatus: "pending", refundId: "55555555-5555-4555-8555-555555555555" });
+    expect(presentManagementReturnsAttention(refund, NOW, true).canReconcile).toBe(true);
+    expect(presentManagementReturnsAttention(refund, NOW, false).canReconcile).toBe(false);
+    const missing = presentManagementReturnsAttention(item({ id: "operation:a", category: "return_operation", priority: "needs_attention" }), NOW, true);
+    expect(missing.canReview).toBe(false);
+    expect(missing.reviewUnavailableReason).toContain("no exact return reference");
+  });
+
+  test("handler reranks expired previews below genuine attention and returns scoped action flags", async () => {
+    const { sessions, cookieHeader } = await cookieFor("manager_a");
+    const result = await handleGetManagementReturnsAttention({
+      correlationId: CORRELATION, cookieHeader, now: NOW, sessions,
+      assignments: createMemoryAssignmentDirectory([{ actorId: "manager_a", organizationId: "org_a", locationRoles: [{ locationId: "loc_a1", role: "manager" }], registerIds: ["reg_a"] }]),
+      controlPlane: createMemoryControlPlaneDirectory([]),
+      returnsAttention: createMemoryManagementReturnsAttentionDirectory([
+        preview({ id: "expired", previewExpiresAt: NOW.toISOString() }),
+        preview({ id: "current" }),
+        item({ id: "attention", category: "return", priority: "needs_attention", returnId: "33333333-3333-4333-8333-333333333333" }),
+      ]),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected view");
+    expect(result.data.rows.map((row) => row.id)).toEqual(["attention", "current", "expired"]);
+    expect(result.data.rows.find((row) => row.id === "current")?.canApprove).toBe(true);
+    expect(result.data.rows.find((row) => row.id === "expired")?.canApprove).toBe(false);
+  });
+});
+
 describe("ADMIN-105 returns attention supabase read model", () => {
   test("normalizes stored return, refund, and operation rows without executing them", async () => {
     const calls: string[] = [];
@@ -399,6 +482,8 @@ describe("ADMIN-105 returns attention supabase read model", () => {
     expect(attention?.returnId).toBe("33333333-3333-4333-8333-333333333333");
     expect(attention?.amount).toEqual({ minor: 1500, currency: "GHS" });
     expect(attention?.locationName).toBe("Accra Main Store and Service Counter");
+    expect(attention?.previewExpiresAt).toBe("2026-09-22T16:15:00.000Z");
+    expect(calls.some((call) => call.includes("preview_expires_at"))).toBe(true);
     expect(listed.rows.find((row) => row.category === "refund_reconciliation")?.refundId).toBe(
       "55555555-5555-4555-8555-555555555555",
     );
@@ -493,6 +578,7 @@ function returnRow(status: string, updatedAt: string) {
     transaction_id: "44444444-4444-4444-8444-444444444444",
     sale_id: "sale_attention",
     status,
+    preview_expires_at: "2026-09-22T16:15:00.000Z",
     refund_total_minor: "1500",
     refund_currency: "GHS",
     updated_at: updatedAt,

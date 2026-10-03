@@ -1,6 +1,7 @@
 import type { ReceiptSettings } from "../../../../../docs/contracts/domain.generated";
 import { DEFAULT_RECEIPT_SETTINGS, copyReceiptSettings, isReceiptSettings, resolveReceiptPresentation } from "../../core/receipt/settings";
 import type { ReceiptSettingsStore } from "../../core/receipt/settings-store";
+import { isReceiptSettingsOverride, resolveReceiptSettingsOverride } from "../../core/receipt/settings-override";
 import { validateCanonicalDef } from "../quotes/canonical-schema";
 import type { PosRestFetch } from "../http/server-fetch";
 
@@ -69,15 +70,22 @@ export function createSupabaseReceiptSettingsStore(
     async get(organizationId, locationId) {
       const path =
         `pos_receipt_settings?organization_id=eq.${encodeURIComponent(organizationId)}` +
-        `&location_id=eq.${encodeURIComponent(locationId)}` +
-        `&select=shorten_product_names,product_name_max_characters,show_sku,presentation`;
+        `&or=(location_id.eq.${encodeURIComponent(locationId)},location_id.is.null)` +
+        `&select=location_id,shorten_product_names,product_name_max_characters,show_sku,presentation,settings_override`;
       const result = await request({ path, method: "GET" });
       if (!result.status || result.status >= 400) {
         throw new Error("receipt settings store is unavailable");
       }
-      const row = Array.isArray(result.body) ? result.body[0] : undefined;
+      const rows = Array.isArray(result.body) ? result.body as Record<string, unknown>[] : [];
+      const shared = rows.find(row => row.location_id === null);
+      // Legacy synthetic adapters omit location_id; real scoped rows always carry it.
+      const row = rows.find(row => row.location_id === locationId || row.location_id === undefined);
       if (!row || typeof row !== "object") {
-        return copyReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
+        return parseSettings(shared);
+      }
+      if (row.settings_override != null) {
+        if (!isReceiptSettingsOverride(row.settings_override)) throw new Error("receipt settings override is invalid");
+        return resolveReceiptSettingsOverride(parseSettings(shared), row.settings_override);
       }
       return parseSettings(row as Record<string, unknown>);
     },
@@ -95,6 +103,7 @@ export function createSupabaseReceiptSettingsStore(
           shorten_product_names: settings.shortenProductNames,
           product_name_max_characters: settings.productNameMaxCharacters,
           show_sku: settings.showSku,
+          settings_override: null,
           ...(settings.presentation === undefined ? {} : { presentation: resolveReceiptPresentation(settings.presentation) }),
           updated_at: new Date().toISOString(),
         },

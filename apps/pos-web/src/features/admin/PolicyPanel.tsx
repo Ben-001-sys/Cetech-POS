@@ -31,7 +31,7 @@ export function PolicyPanel({
   readonly onSelectScope?: (id: string) => void;
 }) {
   if (loading) {
-    return <ManagementLoading message="Loading operational rules…" />;
+    return <ManagementLoading variant="policy" message="Loading operational rules…" />;
   }
   if (errorMessage) {
     return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;

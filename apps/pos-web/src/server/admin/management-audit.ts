@@ -41,6 +41,10 @@ const ACTION_LABELS: Record<string, string> = {
   "staff.password.reset.requested": "Password reset requested",
   "staff.password.reset.completed": "Password reset completed",
   "receipt_settings.set": "Receipt settings changed",
+  "receipt_settings.shared.set": "Shared receipt defaults changed",
+  "receipt_settings.inherit_layout": "Shared receipt layout applied",
+  "sale.recovery.requested": "Manager sale recovery requested",
+  "sale.recovery.result": "Manager sale recovery checked",
 };
 
 type FieldSpec = { readonly label: string; readonly keys: readonly string[] };

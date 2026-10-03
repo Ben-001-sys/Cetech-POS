@@ -27,6 +27,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       controlPlane: composeControlPlaneDirectory(process.env),
       receiptSettings: composeReceiptSettingsAdminStore(process.env),
       locationId: request.nextUrl.searchParams.get("locationId") ?? undefined,
+      scope: request.nextUrl.searchParams.get("scope") ?? undefined,
     });
     return NextResponse.json(result, {
       status: result.ok ? 200 : httpStatusFor(result.error.code),
@@ -69,7 +70,10 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       controlPlane: composeControlPlaneDirectory(process.env),
       receiptSettings: composeReceiptSettingsAdminStore(process.env),
       locationId: body.locationId,
+      scope: body.scope,
       settings: body.settings,
+      overrides: body.overrides,
+      action: body.action,
       protection: {
         origin: request.headers.get("origin"),
         referer: request.headers.get("referer"),
@@ -105,7 +109,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-async function readBody(request: NextRequest): Promise<{ locationId?: string; settings: unknown }> {
+async function readBody(request: NextRequest): Promise<{ locationId?: string; scope?: string; settings: unknown; overrides?: unknown; action?: string }> {
   const body = (await request.json()) as unknown;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { settings: null };
@@ -113,6 +117,9 @@ async function readBody(request: NextRequest): Promise<{ locationId?: string; se
   const record = body as Record<string, unknown>;
   return {
     ...(typeof record.locationId === "string" ? { locationId: record.locationId } : {}),
+    ...(typeof record.scope === "string" ? { scope: record.scope } : {}),
+    ...(Object.hasOwn(record, "overrides") ? { overrides: record.overrides } : {}),
+    ...(typeof record.action === "string" ? { action: record.action } : {}),
     settings: record.settings,
   };
 }

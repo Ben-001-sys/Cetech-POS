@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import type { ManagementReturnsAttentionItem, ManagementReturnsAttentionView } from "../../server/admin/management-returns-attention-directory";
 import { ManagementScreen } from "./ManagementScreen";
-import { ReturnsApprovalsPanel } from "./ReturnsApprovalsPanel";
+import { ManagementReturnDetail, ReturnsApprovalsPanel } from "./ReturnsApprovalsPanel";
+import type { ManagementReturnDetailView } from "../../server/admin/handle-management-return-detail";
 
 function item(
   overrides: Partial<ManagementReturnsAttentionItem> & Pick<ManagementReturnsAttentionItem, "id" | "category" | "priority" | "statusLabel">,
@@ -154,6 +155,59 @@ describe("ReturnsApprovalsPanel", () => {
     expect(html).toContain("Showing returns and refunds for Accra Main Store.");
     expect(html).not.toContain("Tema Harbour");
     expect(html).not.toContain("Grant approval");
+  });
+
+  test("exposes exact existing-return review and only server-permitted approval/refund buttons", () => {
+    const html = render({
+      view: view([
+        item({ id: "approval:a", category: "return", priority: "pending", statusLabel: "Approval required", approvalState: "required", canApprove: true, canReview: true, returnId: "33333333-3333-4333-8333-333333333333" }),
+        item({ id: "refund:a", category: "refund_reconciliation", priority: "awaiting_reconciliation", statusLabel: "Refund check needed", canReconcile: true, refundId: "55555555-5555-4555-8555-555555555555" }),
+      ]),
+      onReviewReturn: async () => { throw new Error("render does not read or mutate"); },
+    });
+    expect(html).toContain("Review existing return");
+    expect(html).toContain(">Approve return<");
+    expect(html).toContain(">Check refund<");
+    expect(html).toContain("Counts are work items");
+  });
+
+  test("expired preview has history wording, no approval button and a clear next step", () => {
+    const html = render({ view: view([item({
+      id: "preview:expired", category: "return", priority: "informational", intervention: "informational",
+      statusLabel: "Return preview expired", persistedStatus: "previewed", previewState: "expired",
+      previewExpiresAt: "2026-10-02T06:00:00.000Z", canApprove: false, canReview: true,
+      actionUnavailableReason: "This preview has expired and cannot be approved or completed. Review the original sale again in Returns.",
+      returnId: "33333333-3333-4333-8333-333333333333",
+    })]), onReviewReturn: async () => { throw new Error("not called"); } });
+    expect(html).toContain("Return preview expired");
+    expect(html).toContain("cannot be approved or completed");
+    expect(html).toContain("History");
+    expect(html).not.toContain(">Approve return<");
+    expect(html).toContain("Review existing return");
+  });
+
+  test("read-only detail renders original lines and separate persisted effect state", () => {
+    const detail: ManagementReturnDetailView = {
+      returnId: "33333333-3333-4333-8333-333333333333", saleId: "sale_a", saleReference: "Order 123",
+      locationId: "loc_a1", registerId: "reg_a", persistedStatus: "requires_attention",
+      statusLabel: "Return needs attention", refundTotal: { minor: 999, currency: "GHS" },
+      previewExpiresAt: "2026-10-02T06:00:00.000Z", executed: true, canApprove: false, namesAvailable: true,
+      lines: [{ orderLineId: "line_a", name: "Original saved product name", quantity: "1", reason: "Damaged packaging", condition: "damaged", intendedDisposition: "no_automatic_restock", allocatedAmount: { minor: 999, currency: "GHS" } }],
+      effects: [
+        { kind: "cash_refund", label: "Cash refund", effectId: "55555555-5555-4555-8555-555555555555", status: "verified", amount: { minor: 999, currency: "GHS" } },
+        { kind: "stock_disposition", label: "Stock handling", effectId: "77777777-7777-4777-8777-777777777777", status: "requires_attention", message: "Remote stock record needs review." },
+      ],
+    };
+    const html = renderToStaticMarkup(<ManagementReturnDetail detail={detail} />);
+    expect(html).toContain(`data-return-detail="${detail.returnId}"`);
+    expect(html).toContain("Original saved product name");
+    expect(html).toContain("Damaged packaging");
+    expect(html).toContain("Cash refund · Completed");
+    expect(html).toContain("Stock handling · Needs review");
+    expect(html).toContain("Remote stock record needs review.");
+    expect(html).toContain("does not send a refund or change stock");
+    expect(html).not.toContain(">Approve return<");
+    expect(html).not.toContain("Complete return");
   });
 
   test("management screen replaces the returns placeholder", () => {

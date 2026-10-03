@@ -39,6 +39,8 @@ import type { StaffRuntimeAuthority } from "../core/identity";
 import type { PosRoute } from "../ui/shell";
 import { catalogRebuildStatusText, type CatalogRebuildView } from "./catalog-rebuild-status";
 import { usePwaLifecycle } from "./pwa-lifecycle-runtime";
+import { AttentionRecoveryPanel } from "../features/admin/AttentionRecoveryPanel";
+import { fetchManagementContext, fetchManagementSaleRecovery, repairManagementSale } from "./management-client";
 import {
   fetchCustomerDirectory,
   fetchOrderDetail,
@@ -170,6 +172,7 @@ export function ApprovedWorkspaceScreens({
   }
   if (route === "attention") {
     return (
+      <>
       <AttentionWorkspace
         items={attentionItems}
         state={attentionState}
@@ -180,9 +183,50 @@ export function ApprovedWorkspaceScreens({
         recoveringItemId={recoveringItemId}
         onRebuildSuccess={onRebuildSuccess}
       />
+      <ManagerSaleRecoveryWorkspace
+        authority={authority}
+        items={attentionItems}
+        online={online}
+        fetchImpl={fetchImpl}
+        onChanged={onRetryAttention}
+      />
+      </>
     );
   }
   return null;
+}
+
+function ManagerSaleRecoveryWorkspace({ authority, items, online, fetchImpl = fetch, onChanged }: {
+  readonly authority: StaffRuntimeAuthority;
+  readonly items: readonly AttentionItemView[];
+  readonly online: boolean;
+  readonly fetchImpl?: typeof fetch;
+  readonly onChanged: () => void;
+}) {
+  const contextKey = JSON.stringify([
+    authority.status, authority.session?.organizationId, authority.session?.actorId,
+    authority.session?.expiresAt, authority.selectedRegisterId,
+    authority.shift?.id, authority.shift?.deviceId, authority.presentationOnly, online,
+  ]);
+  const [management, setManagement] = useState<{ key: string; allowed: boolean } | null>(null);
+  const transactionIds = [...new Set(items.flatMap(item => item.recoverKind === "sale" && item.transactionId ? [item.transactionId] : []))];
+  const hasSales = transactionIds.length > 0;
+  useEffect(() => {
+    if (!online || authority.status !== "ready" || authority.presentationOnly || !hasSales) return;
+    let cancelled = false;
+    void fetchManagementContext(fetchImpl).then(result => {
+      if (!cancelled) setManagement({ key: contextKey, allowed: result.ok && result.data.managerLocationIds.length > 0 });
+    });
+    return () => { cancelled = true; };
+  }, [contextKey, authority.status, authority.presentationOnly, online, fetchImpl, hasSales]);
+  if (!online || management?.key !== contextKey || !management.allowed || !hasSales) return null;
+  return <AttentionRecoveryPanel
+    transactionIds={transactionIds}
+    contextKey={contextKey}
+    loadRecovery={transactionId => fetchManagementSaleRecovery(transactionId, fetchImpl)}
+    repairSale={transactionId => repairManagementSale(transactionId, fetchImpl)}
+    onChanged={onChanged}
+  />;
 }
 
 function OrdersWorkspace({

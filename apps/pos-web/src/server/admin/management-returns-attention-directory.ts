@@ -71,8 +71,13 @@ export type ManagementReturnsAttentionItem = {
   readonly persistedStatus: string;
   /** Present only for stored approval_required returns. Does not change pos_returns.status. */
   readonly approvalState?: "required" | "recorded";
+  readonly previewExpiresAt?: string;
+  readonly previewState?: "current" | "expired" | "unavailable";
   readonly canApprove?: boolean;
   readonly canReconcile?: boolean;
+  readonly canReview?: boolean;
+  readonly actionUnavailableReason?: string;
+  readonly reviewUnavailableReason?: string;
   readonly statusLabel: string;
   readonly summary: string;
   readonly nextAction: string;
@@ -255,7 +260,7 @@ export function createSupabaseManagementReturnsAttentionDirectory(input: {
   };
 }
 
-const RETURN_SELECT = "return_id,organization_id,location_id,register_id,transaction_id,sale_id,status,fingerprint,refund_total_minor,refund_currency,updated_at";
+const RETURN_SELECT = "return_id,organization_id,location_id,register_id,transaction_id,sale_id,status,fingerprint,preview_expires_at,refund_total_minor,refund_currency,updated_at";
 const REFUND_SELECT = "refund_id,return_id,organization_id,location_id,transaction_id,status,amount_minor,currency,updated_at";
 const COMMERCIAL_SELECT = "commercial_refund_id,return_id,organization_id,location_id,transaction_id,sale_id,status,amount_minor,currency,updated_at";
 const STOCK_SELECT = "stock_disposition_id,return_id,organization_id,location_id,transaction_id,sale_id,status,updated_at";
@@ -466,6 +471,7 @@ function normalizeReturn(
     transactionId: value.transaction_id,
     saleId: value.sale_id,
     persistedStatus: value.status,
+    ...(typeof value.preview_expires_at === "string" ? { previewExpiresAt: value.preview_expires_at } : {}),
     ...(value.status === "approval_required"
       ? { approvalState: approvalRecorded ? "recorded" as const : "required" as const }
       : {}),

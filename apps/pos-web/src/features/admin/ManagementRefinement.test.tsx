@@ -45,7 +45,7 @@ describe("Management presentation boundaries", () => {
   });
 
   test("initial loading announces the state and offers no fabricated values or controls", () => {
-    const html = renderToStaticMarkup(<ManagementLoading message="Loading shifts and cash…" />);
+    const html = renderToStaticMarkup(<ManagementLoading variant="shifts" message="Loading shifts and cash…" />);
     // Loading text must not sit under a busy ancestor, which may defer announcements.
     const outerRegion = html.match(/^<section[^>]*>/)?.[0];
     const announcement = html.match(/<p[^>]*role="status"[^>]*>[^<]*<\/p>/)?.[0];

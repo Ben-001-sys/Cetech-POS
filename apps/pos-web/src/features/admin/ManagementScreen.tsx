@@ -7,6 +7,8 @@ import type { OperationalPolicyView } from "../../server/admin/handle-operationa
 import type { ManagementLocation } from "../../server/admin/management-topology-directory";
 import type { ManagementShiftCashView } from "../../server/admin/management-shift-cash-directory";
 import type { ManagementReturnsAttentionView } from "../../server/admin/management-returns-attention-directory";
+import type { ManagementReturnDetailView } from "../../server/admin/handle-management-return-detail";
+import type { ApiResult } from "../../../../../docs/contracts/ports";
 import type { StaffAssignmentRole } from "../../server/auth/roles";
 import type { ShiftClosePolicyOverride } from "../../server/auth/policy";
 import { StaffAccessPanel } from "./StaffAccessPanel";
@@ -21,6 +23,7 @@ import type { ManagementSystemHealthView } from "../../server/admin/management-s
 import type { ManagementAuditView } from "../../server/admin/management-audit";
 import type { ManagementReceiptSettingsView } from "../../server/admin/handle-management-receipt-settings";
 import type { ReceiptSettings } from "../../../../../docs/contracts/domain.generated";
+import type { ReceiptSettingsOverride, ReceiptSettingsScope } from "../../core/receipt/settings-override";
 
 const LABELS: Record<ManagementSection, { label: string; description: string }> = {
   overview: { label: "Overview", description: "Current store-management summary." },
@@ -35,7 +38,7 @@ const LABELS: Record<ManagementSection, { label: string; description: string }> 
   policies: { label: "Operational rules", description: "Shift-closing and return-approval rules by organization, location and register." },
   receipt_settings: {
     label: "Receipt settings",
-    description: "Receipt branding and presentation by location.",
+    description: "Shared receipt defaults and location-specific details.",
   },
 };
 
@@ -101,6 +104,8 @@ export function ManagementScreen({
   receiptLocations = [],
   receiptLocationId,
   onSelectReceiptLocation,
+  receiptScope,
+  onSelectReceiptScope,
   receiptSettingsView = null,
   receiptSettingsLoading = false,
   receiptSettingsSaving = false,
@@ -108,6 +113,8 @@ export function ManagementScreen({
   receiptSettingsSaveError,
   receiptSettingsSaveMessage,
   onSaveReceiptSettings,
+  onSaveReceiptOverrides,
+  onApplySharedReceiptSettings,
   systemHealthView = null,
   systemHealthLoading = false,
   systemHealthError,
@@ -125,6 +132,7 @@ export function ManagementScreen({
   onInviteStaff,
   onCreateStaff,
   onReturnsChanged,
+  onReviewReturn,
   onShiftsChanged,
 }: {
   readonly context: ManagementContext;
@@ -153,12 +161,17 @@ export function ManagementScreen({
   readonly shiftCashCorrelationId?: string;
   readonly shiftCashPolicyLoading?: boolean;
   readonly returnsAttentionView?: ManagementReturnsAttentionView | null;
+  readonly onReviewReturn?: (returnId: string) => Promise<ApiResult<ManagementReturnDetailView>>;
   readonly returnsAttentionLoading?: boolean;
   readonly returnsAttentionError?: string;
   readonly returnsAttentionCorrelationId?: string;
   readonly receiptLocations?: readonly ReceiptLocationOption[];
   readonly receiptLocationId?: string;
   readonly onSelectReceiptLocation?: (locationId: string) => void;
+  readonly receiptScope?: ReceiptSettingsScope;
+  readonly onSelectReceiptScope?: (scope: ReceiptSettingsScope) => void;
+  readonly onSaveReceiptOverrides?: (overrides: ReceiptSettingsOverride) => void;
+  readonly onApplySharedReceiptSettings?: () => void;
   readonly receiptSettingsView?: ManagementReceiptSettingsView | null;
   readonly receiptSettingsLoading?: boolean;
   readonly receiptSettingsSaving?: boolean;
@@ -373,6 +386,7 @@ export function ManagementScreen({
               errorMessage={returnsAttentionError}
               correlationId={returnsAttentionCorrelationId}
               onChanged={onReturnsChanged}
+              onReviewReturn={onReviewReturn}
             />
           ) : activeSection === "policies" ? (
             <PolicyPanel
@@ -390,6 +404,8 @@ export function ManagementScreen({
               locations={receiptLocations}
               selectedLocationId={receiptLocationId}
               onSelectLocation={onSelectReceiptLocation}
+              scope={receiptScope}
+              onSelectScope={onSelectReceiptScope}
               view={receiptSettingsView}
               loading={receiptSettingsLoading}
               saving={receiptSettingsSaving}
@@ -397,6 +413,8 @@ export function ManagementScreen({
               saveError={receiptSettingsSaveError}
               saveMessage={receiptSettingsSaveMessage}
               onSave={onSaveReceiptSettings}
+              onSaveOverrides={onSaveReceiptOverrides}
+              onApplyShared={onApplySharedReceiptSettings}
             />
           ) : activeSection === "system_health" ? (
             <SystemHealthPanel

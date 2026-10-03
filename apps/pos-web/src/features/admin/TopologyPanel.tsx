@@ -45,9 +45,9 @@ export function TopologyPanel({
   readonly onSave?: (change: TopologyChange) => void;
 }) {
   if (loading) {
-    return <ManagementLoading message={`Loading ${mode}…`} />;
+    return <ManagementLoading message={`Loading ${mode}…`} variant="topology" showCreate={canManage && Boolean(onSave)} />;
   }
-  if (errorMessage) {
+  if (errorMessage && rows.length === 0) {
     return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;
   }
   if (rows.length === 0 && !canManage) {
@@ -57,6 +57,7 @@ export function TopologyPanel({
   if (mode === "locations") {
     return (
       <div className="stack">
+        <LifecycleNotice errorMessage={errorMessage} canManage={canManage} />
         {canManage && onSave ? (
           <CreateCard title="Add location" saving={saving}>
             {(draft) => (
@@ -82,7 +83,16 @@ export function TopologyPanel({
               </div>
               <p>{location.registers.length} register{location.registers.length === 1 ? "" : "s"}</p>
               {canManage && onSave ? (
-                <LocationEditor location={location} saving={saving} onSave={onSave} />
+                <>
+                  <LocationEditor key={`${location.id}:${location.status}:${location.name}`} location={location} saving={saving} onSave={onSave} />
+                  <LifecycleAction
+                    name={location.name}
+                    active={location.status !== "inactive"}
+                    saving={saving}
+                    action="location"
+                    onConfirm={() => onSave({ kind: "location", locationId: location.id, name: location.name, status: location.status === "inactive" ? "active" : "inactive" })}
+                  />
+                </>
               ) : (
                 <p className="muted">Location changes are limited to an organization owner or admin.</p>
               )}
@@ -100,6 +110,7 @@ export function TopologyPanel({
   if (mode === "registers") {
     return (
       <div className="stack">
+        <LifecycleNotice errorMessage={errorMessage} canManage={canManage} />
         {canManage && onSave ? (
           <RegisterCreate rows={rows} saving={saving} onSave={onSave} />
         ) : null}
@@ -118,6 +129,7 @@ export function TopologyPanel({
                 </div>
                 <p>Currency: {register.currency}</p>
                 <p className="muted">Currency stays the same after the register is created.</p>
+                {location.status === "inactive" ? <div className="banner warning" role="status">This location is inactive. Reactivate it before opening a new shift.</div> : null}
                 {register.status === "active" &&
                 location.devices.filter((device) => device.status === "active").length === 0 ? (
                   <div className="banner warning" role="status">
@@ -125,7 +137,16 @@ export function TopologyPanel({
                   </div>
                 ) : null}
                 {canManage && onSave ? (
-                  <RegisterEditor locationId={location.id} register={register} saving={saving} onSave={onSave} />
+                  <>
+                    <RegisterEditor key={`${register.id}:${register.status}:${register.name}`} locationId={location.id} register={register} saving={saving} onSave={onSave} />
+                    <LifecycleAction
+                      name={register.name}
+                      active={register.status !== "disabled"}
+                      saving={saving}
+                      action="register"
+                      onConfirm={() => onSave({ kind: "register", registerId: register.id, locationId: location.id, name: register.name, status: register.status === "disabled" ? "active" : "disabled" })}
+                    />
+                  </>
                 ) : null}
                 <details className="management-reference">
                   <summary>Reference</summary>
@@ -144,6 +165,7 @@ export function TopologyPanel({
   );
   return (
     <div className="stack">
+      <LifecycleNotice errorMessage={errorMessage} canManage={canManage} />
       {canManage && onSave ? <DeviceCreate rows={rows} saving={saving} onSave={onSave} /> : null}
       <div className="management-grid">
         {devices.map(({ location, device }) => (
@@ -159,8 +181,19 @@ export function TopologyPanel({
             </div>
             <p className="muted">This device is assigned to the location and is not linked to a specific register.</p>
             {canManage && onSave ? (
-              <DeviceEditor rows={rows} locationId={location.id} device={device} saving={saving} onSave={onSave} />
-            ) : null}
+              <>
+                <DeviceEditor key={`${device.id}:${location.id}:${device.status}:${device.label}`} rows={rows} locationId={location.id} device={device} saving={saving} onSave={onSave} />
+                <LifecycleAction
+                  name={device.label}
+                  active={device.status === "active"}
+                  saving={saving}
+                  action="device"
+                  onConfirm={() => onSave({ kind: "device", deviceId: device.id, locationId: location.id, label: device.label, status: device.status === "active" ? "inactive" : "active" })}
+                />
+              </>
+            ) : (
+              <p className="muted">Device changes are limited to an organization owner or admin.</p>
+            )}
             <details className="management-reference">
               <summary>Reference</summary>
               <p className="muted">Device ID {device.id}</p>
@@ -170,6 +203,33 @@ export function TopologyPanel({
       </div>
     </div>
   );
+}
+
+function LifecycleNotice({ errorMessage, canManage }: { readonly errorMessage?: string; readonly canManage: boolean }) {
+  return <>
+    {errorMessage ? <div className="banner danger" role="alert">{errorMessage}</div> : null}
+    <p className="muted">Deactivate unused locations and devices, or disable unused registers. Sales, receipts, staff assignments and history are kept. {canManage ? "Close or resolve affected shifts before changing their availability." : "An organization owner or admin can make these changes."}</p>
+  </>;
+}
+
+function LifecycleAction({ name, active, saving, action, onConfirm }: {
+  readonly name: string;
+  readonly active: boolean;
+  readonly saving?: boolean;
+  readonly action: "location" | "register" | "device";
+  readonly onConfirm: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const verb = active ? action === "register" ? "Disable" : "Deactivate" : "Reactivate";
+  if (!confirming) return <button type="button" className="btn" disabled={saving} onClick={() => setConfirming(true)}>{verb} {action}</button>;
+  return <div className="banner warning stack" role="group" aria-label={`${verb} ${name}`}>
+    <p>{verb} {name}?</p>
+    <p>Sales, receipts and history will be kept. {active ? "Affected shifts must be closed or resolved first." : "This makes it available for new work again."}</p>
+    <div className="actions">
+      <button type="button" className="btn" disabled={saving} onClick={() => { onConfirm(); setConfirming(false); }}>Confirm {verb.toLowerCase()}</button>
+      <button type="button" className="btn" disabled={saving} onClick={() => setConfirming(false)}>Cancel</button>
+    </div>
+  </div>;
 }
 
 function CreateCard({

@@ -106,15 +106,17 @@ export function createSupabaseCheckoutStore(options: SupabaseCheckoutStoreOption
     return rows[0];
   }
 
-  async function readLocationName(organizationId: string, locationId: string): Promise<string | undefined> {
-    try {
-      const row = await getOne(
-        `pos_locations?id=eq.${encodeURIComponent(locationId)}&organization_id=eq.${encodeURIComponent(organizationId)}&select=name`,
-      );
-      return typeof row?.name === "string" && row.name.trim() ? row.name.trim() : undefined;
-    } catch {
-      return undefined;
+  async function readLocation(organizationId: string, locationId: string) {
+    const row = await getOne(
+      `pos_locations?id=eq.${encodeURIComponent(locationId)}&organization_id=eq.${encodeURIComponent(organizationId)}&select=name,status`,
+    );
+    if (!row || (row.status !== "active" && row.status !== "inactive")) {
+      throw new Error("durable location lifecycle is unavailable");
     }
+    return {
+      locationName: typeof row.name === "string" && row.name.trim() ? row.name.trim() : undefined,
+      locationStatus: row.status,
+    } as const;
   }
 
   return {
@@ -163,7 +165,7 @@ export function createSupabaseCheckoutStore(options: SupabaseCheckoutStoreOption
       const row = await getOne(`pos_registers?id=eq.${encodeURIComponent(id)}&select=id,organization_id,location_id,name,currency,status`);
       const register = row ? mapRegister(row) : undefined;
       if (!register) return undefined;
-      return { ...register, locationName: await readLocationName(register.organizationId, register.locationId) };
+      return { ...register, ...await readLocation(register.organizationId, register.locationId) };
     },
 
     async getDevice(id) {

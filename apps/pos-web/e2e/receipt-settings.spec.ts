@@ -28,11 +28,14 @@ async function installReceiptManagement(page: Page, canManage = true) {
     contentType: "application/json", body: data([{ id: "loc_a1", name: "Accra Shop", registers: [], devices: [] }]),
   }));
   await page.route("**/api/pos/v1/admin/receipt-settings**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    let scope = params.get("scope") ?? "location";
     if (route.request().method() === "PUT") {
+      scope = route.request().postDataJSON().scope ?? "location";
       settings = route.request().postDataJSON().settings as ReceiptSettings;
       saves.push(settings);
     }
-    await route.fulfill({ contentType: "application/json", body: data({ locationId: "loc_a1", locationName: "Accra Shop", settings, persisted: saves.length > 0, canManage }) });
+    await route.fulfill({ contentType: "application/json", body: data({ locationId: scope === "organization" ? "" : "loc_a1", ...(scope === "location" ? { locationName: "Accra Shop" } : {}), scope, settings, persisted: saves.length > 0, canManage }) });
   });
   await page.addInitScript(() => {
     const state = { calls: 0, text: "", widthPx: 0, imageReady: false };
@@ -69,7 +72,7 @@ test("unsaved branding preview, logo, save/reload and marked sample print use th
   await expect(preview.locator("img")).toHaveCount(1);
   expect(harness.saves).toHaveLength(0);
 
-  await page.getByRole("button", { name: "Save receipt settings", exact: true }).click();
+  await page.getByRole("button", { name: "Save shared defaults", exact: true }).click();
   await expect.poll(() => harness.saves.length).toBe(1);
   expect(harness.saves[0]?.presentation?.businessName).toBe("CETECH Ghana");
   expect(harness.saves[0]?.presentation?.logoDataUrl).toMatch(/^data:image\/png;base64,/);

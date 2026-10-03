@@ -31,7 +31,7 @@ export function SystemHealthPanel({
   readonly correlationId?: string;
 }) {
   if (loading) {
-    return <ManagementLoading message="Loading system health…" />;
+    return <ManagementLoading variant="system-health" message="Loading system health…" />;
   }
   if (errorMessage || !view) {
     return (

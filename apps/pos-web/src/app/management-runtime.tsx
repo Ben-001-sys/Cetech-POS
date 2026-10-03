@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ApiResult } from "../../../../docs/contracts/ports";
 import type { ManagementContext, ManagementSection } from "../server/admin/management-context";
@@ -13,6 +13,7 @@ import type { ManagementReceiptSettingsView } from "../server/admin/handle-manag
 import type { ManagementSystemHealthView } from "../server/admin/management-system-health";
 import type { ManagementAuditView } from "../server/admin/management-audit";
 import type { ReceiptSettings } from "../../../../docs/contracts/domain.generated";
+import type { ReceiptSettingsOverride, ReceiptSettingsScope } from "../core/receipt/settings-override";
 import type { ShiftClosePolicyOverride } from "../server/auth/policy";
 import { ManagementScreen } from "../features/admin/ManagementScreen";
 import type { TopologyChange } from "../features/admin/TopologyPanel";
@@ -20,6 +21,7 @@ import {
   fetchManagementAudit,
   fetchManagementContext,
   fetchManagementReceiptSettings,
+  fetchManagementReturnDetail,
   fetchManagementReturnsAttention,
   fetchManagementShiftsCash,
   fetchManagementSystemHealth,
@@ -35,6 +37,7 @@ import {
   updateOperationalPolicy,
   updateStaffAccessStatus,
   updateStaffAssignment,
+  type ManagementReceiptSettingsChange,
 } from "./management-client";
 
 export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: typeof fetch }) {
@@ -51,16 +54,22 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
   const [shiftCashRefresh, setShiftCashRefresh] = useState(0);
   const [returnsAttentionResult, setReturnsAttentionResult] = useState<ApiResult<ManagementReturnsAttentionView> | null>(null);
   const [returnsAttentionRefresh, setReturnsAttentionRefresh] = useState(0);
-  const [receiptSettingsResult, setReceiptSettingsResult] = useState<ApiResult<ManagementReceiptSettingsView> | null>(null);
+  const [receiptSettingsResponse, setReceiptSettingsResult] = useState<ApiResult<ManagementReceiptSettingsView> | null>(null);
+  const [receiptLoadedKey, setReceiptLoadedKey] = useState<string | null>(null);
   const [systemHealthResult, setSystemHealthResult] = useState<ApiResult<ManagementSystemHealthView> | null>(null);
   const [auditResult, setAuditResult] = useState<ApiResult<ManagementAuditView> | null>(null);
   const [receiptLocationId, setReceiptLocationId] = useState<string | null>(null);
+  const [receiptScope, setReceiptScope] = useState<ReceiptSettingsScope | null>(null);
   const [receiptSaving, setReceiptSaving] = useState(false);
   const [receiptSaveError, setReceiptSaveError] = useState<string | null>(null);
   const [receiptSaveMessage, setReceiptSaveMessage] = useState<string | null>(null);
   const [staffSavingActorId, setStaffSavingActorId] = useState<string | null>(null);
   const [staffMutationError, setStaffMutationError] = useState<string | null>(null);
   const [invitingStaff, setInvitingStaff] = useState(false);
+  const receiptGeneration = useRef(0);
+  const topologyGeneration = useRef(0);
+  const receiptMutation = useRef(false);
+  const topologyMutation = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,19 +119,20 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
 
   useEffect(() => {
     if (
-      !context ||
+      !context || topologySaving || topologyMutation.current ||
       !["staff_access", "locations", "registers", "devices", "receipt_settings", "policies"].includes(allowedSection)
     ) {
       return;
     }
     let cancelled = false;
+    const generation = ++topologyGeneration.current;
     void fetchManagementTopology(fetchImpl).then((next) => {
-      if (!cancelled) setTopologyResult(next);
+      if (!cancelled && generation === topologyGeneration.current) setTopologyResult(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [allowedSection, context, fetchImpl]);
+  }, [allowedSection, context, fetchImpl, topologySaving]);
 
   useEffect(() => {
     if (!context || allowedSection !== "shifts_cash") return;
@@ -202,17 +212,29 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
   const selectedReceiptLocationId = receiptLocations.some((row) => row.id === receiptLocationId)
     ? receiptLocationId
     : receiptLocations[0]?.id ?? null;
+  const organizationReceiptAuthority = context?.controlRole === "owner" || context?.controlRole === "admin";
+  const effectiveReceiptScope = organizationReceiptAuthority ? receiptScope ?? "organization" : "location";
+  const receiptSelectionKey = JSON.stringify([context?.organizationId, context?.actorId, organizationReceiptAuthority, effectiveReceiptScope,
+    effectiveReceiptScope === "location" ? selectedReceiptLocationId : null]);
+  const receiptSettingsResult = receiptLoadedKey === receiptSelectionKey ? receiptSettingsResponse : null;
 
   useEffect(() => {
-    if (!context || allowedSection !== "receipt_settings" || !selectedReceiptLocationId) return;
+    if (!context || receiptSaving || receiptMutation.current || allowedSection !== "receipt_settings" || (effectiveReceiptScope === "location" && !selectedReceiptLocationId)) return;
     let cancelled = false;
-    void fetchManagementReceiptSettings(selectedReceiptLocationId, fetchImpl).then((next) => {
-      if (!cancelled) setReceiptSettingsResult(next);
+    const generation = ++receiptGeneration.current;
+    void fetchManagementReceiptSettings({
+      scope: effectiveReceiptScope,
+      ...(effectiveReceiptScope === "location" && selectedReceiptLocationId ? { locationId: selectedReceiptLocationId } : {}),
+    }, fetchImpl).then((next) => {
+      if (!cancelled && generation === receiptGeneration.current) {
+        setReceiptSettingsResult(next);
+        setReceiptLoadedKey(receiptSelectionKey);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [allowedSection, context, fetchImpl, selectedReceiptLocationId]);
+  }, [allowedSection, context, fetchImpl, selectedReceiptLocationId, effectiveReceiptScope, receiptSaving, receiptSelectionKey]);
 
   useEffect(() => {
     if (!context || (allowedSection !== "policies" && allowedSection !== "shifts_cash")) return;
@@ -316,6 +338,9 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
   }
 
   async function saveTopologyChange(change: TopologyChange) {
+    if (topologyMutation.current) return;
+    topologyMutation.current = true;
+    topologyGeneration.current += 1;
     setTopologySaving(true);
     setTopologyMutationError(null);
     try {
@@ -329,6 +354,7 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
       setTopologyResult(next);
       if (!next.ok) setTopologyMutationError(presentManagementError(next.error.message));
     } finally {
+      topologyMutation.current = false;
       setTopologySaving(false);
     }
   }
@@ -388,22 +414,36 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
   }
 
   async function saveReceiptSettings(settings: ReceiptSettings) {
-    if (!selectedReceiptLocationId) return;
+    if (effectiveReceiptScope === "organization") {
+      await saveReceiptChange({ scope: "organization", settings }, "Shared receipt defaults saved.");
+    } else if (selectedReceiptLocationId) {
+      await saveReceiptChange({ locationId: selectedReceiptLocationId, settings }, "Receipt settings saved.");
+    }
+  }
+
+  async function saveReceiptOverrides(overrides: ReceiptSettingsOverride) {
+    if (!selectedReceiptLocationId || effectiveReceiptScope !== "location") return;
+    await saveReceiptChange({ scope: "location", locationId: selectedReceiptLocationId, overrides }, "Location receipt overrides saved.");
+  }
+
+  async function saveReceiptChange(input: ManagementReceiptSettingsChange, message: string) {
+    if (!organizationReceiptAuthority || receiptMutation.current) return;
+    receiptMutation.current = true;
+    receiptGeneration.current += 1;
     setReceiptSaving(true);
     setReceiptSaveError(null);
     setReceiptSaveMessage(null);
     try {
-      const saved = await updateManagementReceiptSettings({
-        locationId: selectedReceiptLocationId,
-        settings,
-      }, fetchImpl);
+      const saved = await updateManagementReceiptSettings(input, fetchImpl);
       if (!saved.ok) {
         setReceiptSaveError(presentManagementError(saved.error.message));
         return;
       }
       setReceiptSettingsResult(saved);
-      setReceiptSaveMessage("Receipt settings saved.");
+      setReceiptLoadedKey(receiptSelectionKey);
+      setReceiptSaveMessage(message);
     } finally {
+      receiptMutation.current = false;
       setReceiptSaving(false);
     }
   }
@@ -444,6 +484,7 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
       context={result.data}
       activeSection={allowedSection}
       onSelectSection={(next) => {
+        if (next === allowedSection) return;
         if (next === "staff_access") setStaffResult(null);
         if (["staff_access", "locations", "registers", "devices", "receipt_settings"].includes(next)) {
           setTopologyResult(null);
@@ -568,12 +609,22 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
       onReturnsChanged={() => {
         setReturnsAttentionRefresh((value) => value + 1);
       }}
+      onReviewReturn={(returnId) => fetchManagementReturnDetail(returnId, fetchImpl)}
       onShiftsChanged={() => {
         setShiftCashRefresh((value) => value + 1);
       }}
       receiptLocations={receiptLocations}
       receiptLocationId={selectedReceiptLocationId ?? undefined}
+      receiptScope={effectiveReceiptScope}
+      onSelectReceiptScope={organizationReceiptAuthority ? (scope) => {
+        if (receiptSaving || scope === effectiveReceiptScope) return;
+        setReceiptScope(scope);
+        setReceiptSettingsResult(null);
+        setReceiptSaveError(null);
+        setReceiptSaveMessage(null);
+      } : undefined}
       onSelectReceiptLocation={(locationId) => {
+        if (receiptSaving || locationId === selectedReceiptLocationId) return;
         setReceiptLocationId(locationId);
         setReceiptSettingsResult(null);
         setReceiptSaveError(null);
@@ -583,7 +634,7 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
       receiptSettingsLoading={
         allowedSection === "receipt_settings" && (
           topologyResult === null ||
-          (selectedReceiptLocationId !== null && receiptSettingsResult === null)
+          ((effectiveReceiptScope === "organization" || selectedReceiptLocationId !== null) && receiptSettingsResult === null)
         )
       }
       receiptSettingsSaving={receiptSaving}
@@ -621,12 +672,16 @@ export function ManagementRuntime({ fetchImpl = fetch }: { readonly fetchImpl?: 
           : undefined
       }
       onSaveReceiptSettings={
-        receiptSettingsResult?.ok && receiptSettingsResult.data.canManage
+        organizationReceiptAuthority && receiptSettingsResult?.ok && receiptSettingsResult.data.canManage
           ? (settings) => {
               void saveReceiptSettings(settings);
             }
           : undefined
       }
+      onSaveReceiptOverrides={organizationReceiptAuthority && receiptSettingsResult?.ok && receiptSettingsResult.data.canManage
+        ? (overrides) => { void saveReceiptOverrides(overrides); } : undefined}
+      onApplySharedReceiptSettings={organizationReceiptAuthority && receiptSettingsResult?.ok && receiptSettingsResult.data.canManage
+        ? () => { void saveReceiptChange({ scope: "organization", action: "apply_shared" }, "Shared layout applied to all locations. Local address, contact and tax details were kept."); } : undefined}
       onSavePolicy={
         policyResult?.ok && policyResult.data.canManage
           ? (override) => {

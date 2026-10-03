@@ -1,7 +1,7 @@
 # CETECH POS — Staff Test Brief
 
 **Issued:** 2 October 2026\
-**Updated:** 2 October 2026 — urgent price-delay qualification added\
+**Updated:** 3 October 2026 — management correction candidate\
 **Use:** The next staff-testing round. Each tester records their actual test date.
 
 ## Open this POS
@@ -14,9 +14,9 @@ If your installed POS already opens from this address and works, keep using it. 
 
 If a different POS address shows **Access denied** even with your correct password, open the link above. If it still fails, record the address, the message, and any Reference line for the administrator.
 
-A delay of two to five minutes after adding an item has been reported. An urgent correction is being checked. This document does not mean the correction is already on the shared POS link.
+Management corrections are being qualified: shared receipt defaults, staff and location deactivation, saved-return review, matching loaders and manager recovery for an original unpaid sale. The new candidate is not yet confirmed on the shared POS link. Keep existing saved work.
 
-Keep using the same POS address above. Once the correction is confirmed there, refresh or close and reopen the installed POS. Keep your saved cart and unfinished work. Do not clear browser data.
+Keep using the same POS address above. Once this candidate is confirmed there, refresh or close and reopen the installed POS. Keep your saved cart and unfinished work. Do not clear browser data.
 
 Record how long the price takes to appear in **T23 and T30**. If **Check price again** appears, select it once. If the price is still unavailable, report the time and message and continue another module. Do not make up a total or repeat a sale.
 
@@ -125,21 +125,17 @@ You do not need the owner to sit with you. Your completed workbook and evidence 
 <details>
 <summary><strong>Build and qualification record — for the review team</strong></summary>
 
-- Original frozen application SHA: `1021cd113c783e25030fe9c0bda1be9ddcf5888c`.
-- Source candidate: [PR #130](https://github.com/WB-DevWorld/cetech-pwa-pos/pull/130), `integration/r9-staff-remediation-final`.
+- Management source candidate: `ws3/management-remediation-2026-10-03`, MANAGE-REMEDIATION-01; awaiting exact-head CI, independent review and a new release decision. This candidate includes three additive operational migrations, which have not been applied to staging.
+- Last verified live application: `51c0664d3ca96c5742ff6a2324a2fdf412dddd3b`, [PR #137](https://github.com/WB-DevWorld/cetech-pwa-pos/pull/137), Preview `dpl_8aKgw7sjgfLgvF4HZCbCcxquaxrD`; exact-head Linux/Windows CI [run 37095621894](https://github.com/WB-DevWorld/cetech-pwa-pos/actions/runs/37095621894) passed. That evidence does not qualify this new management candidate.
 - Accepted test URL: `https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app`.
-- Link correction verified 2 October 2026: the shared integration address above resolves to the same frozen deployment. The generated deployment URL returned `FORBIDDEN: session origin is not allowed`; it is not the staff link. Password authentication succeeded in the sampled logs before that rejection.
-- Urgent correction record, 2 October 2026: [issue #132](https://github.com/WB-DevWorld/cetech-pwa-pos/issues/132), contributor branch `ws3/quote-latency-2026-10-02`, based on the original frozen application SHA. The owner authorizes this correction and requests the same tester URL. The correction has not yet been deployed; the original deployment/CI evidence below does not qualify the new candidate.
-- Before declaring the correction live, record its exact application SHA, current CI, independently reviewed head and READY deployment here, then confirm that the same accepted test URL serves it. Separate results before and after the correction. A timeout/retry test alone does not prove acceptable pricing speed.
-- Vercel deployment: `dpl_89TVtntmRzjMi8WgdgvkU35KVFLn`; READY; metadata identifies the frozen SHA; Preview target.
-- CI: [#1466 / run 36994717064](https://github.com/WB-DevWorld/cetech-pwa-pos/actions/runs/36994717064), SUCCESS. Linux and Windows qualification belongs to this exact application head.
-- The original freeze followed the owner's instruction to use that head for staff testing. The 2 October urgent correction instruction supersedes the freeze for issue #132 only. It is not a production approval or a claim that the remaining human/device qualifications passed.
-- This brief does not claim a new independent human approval of PR #130. Documentation review and final release approval remain separate.
+- The previous SALE-RECOVERY-01 one-time release exception is consumed. No new tester-alias change, migration application, actual sale repair, payment, refund or stock operation has been performed for this candidate.
+- The reported hanging sale remains a live verification item. A proof-gated manager repair surface is source-tested; neither a button nor a green build proves that the live sale recovered. Commerce availability requires a fresh authorized service check.
+- Before declaring this candidate live, record its exact source SHA, both CI jobs, reviewed head, applied migration versions and READY Preview; then verify the same accepted URL serves it. Keep pre-change and post-change tester results separate.
 - Owner-provided pre-freeze sweep: cashier access, catalog performance, sale/recovery, stored receipts/reprint, return safety, invitations, X report and responsive Management have automated and/or live evidence. Six stale tickets (#103, #113, #116, #118, #126, #128) were closed.
 - Remaining evidence: #114 (T100–T104), #117 (T40/T60/T61), #112 (T92), #87 (T25), #86 (T05), #115 (specialist investigation). #102 remains protected historical work.
 - Register availability above is an earlier environment snapshot, not a live allocation. The administrator records actual allocations and readiness before each tester starts.
 - Documentation-only commits after this SHA do not change which application staff test. Keep using the exact URL above.
 - Session start / first tester: fill in the private working copy.
-- This revised brief tracks the issue #132 correction. Publish the confirmed build/deployment record before asking staff to treat the correction as live; collect its results separately from the original freeze.
+- This brief tracks the management candidate. Record the confirmed release before staff treat its controls as live; collect its results separately from previous builds.
 
 </details>

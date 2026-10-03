@@ -142,7 +142,7 @@ test.describe("ADMIN-105 Management responsiveness and operator language", () =>
     await page.locator(".management-nav").getByRole("button", { name: "Staff & access", exact: true }).click();
 
     await expect(page.getByRole("heading", { name: "Staff & access" })).toBeVisible();
-    await expect(page.getByText("Account active")).toBeVisible();
+    await expect(page.getByText("Login account active")).toBeVisible();
     await expect(page.getByText("POS access active")).toBeVisible();
     await expect(page.locator(".management-control-role .label").filter({ hasText: "Organization role" }).first()).toBeVisible();
     await expect(page.getByText("Location and register assignments")).toBeVisible();

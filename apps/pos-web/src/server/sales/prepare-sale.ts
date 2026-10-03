@@ -36,10 +36,21 @@ export async function prepareSale(input: {
   readonly request: PrepareSaleRequest;
   readonly context: CommandContext;
   readonly now: Date;
+  /** Management recovery may only replay/repair an already claimed original order. */
+  readonly requireOriginalRepair?: boolean;
 }): Promise<ApiResult<PreparedSale>> {
   const { store, salesPort, actor, request, context, now } = input;
   const requestStartedAt = Date.now();
   return store.withLock(`prepare:${request.transactionId}`, async () => {
+    if (input.requireOriginalRepair) {
+      const original = await store.findSalePrepareOperation(request.transactionId);
+      if (!original || original.organizationId !== actor.organizationId || original.transactionId !== request.transactionId ||
+          original.idempotencyKey !== context.idempotencyKey || !["repair", "replay"].includes(claimKindForExistingPrepare({
+            status: original.status, outcome: original.outcome, intentPresent: original.intentPresent,
+          }))) {
+        return apiFailure("REQUIRES_ATTENTION", "The original sale is not available for an existing-order repair. No new order was requested.", context.correlationId);
+      }
+    }
     const existing = await store.getSale(request.transactionId);
     if (existing) {
       const matched = assertSaleMatchesPrepareRequest({
@@ -138,6 +149,14 @@ export async function prepareSale(input: {
         allowOriginalRepair: true,
         repairNow: () => new Date(now.getTime() + Math.max(0, Date.now() - requestStartedAt)),
       });
+    }
+
+    if (input.requireOriginalRepair) {
+      return apiFailure(
+        "REQUIRES_ATTENTION",
+        "The original sale is no longer eligible for repair. No new commercial order was requested.",
+        context.correlationId,
+      );
     }
 
     try {
@@ -526,6 +545,9 @@ async function assertPrepareScope(input: {
   const register = await input.store.getRegister(input.request.registerId);
   if (!register || register.status !== "active") {
     return apiFailure("NOT_FOUND", "register is not available", input.context.correlationId);
+  }
+  if (!input.allowExpiredOriginalQuote && register.locationStatus === "inactive") {
+    return apiFailure("NOT_FOUND", "location is inactive; reactivate it before starting a sale", input.context.correlationId);
   }
   if (register.organizationId !== input.actor.organizationId || register.locationId !== quote.locationId) {
     return apiFailure("FORBIDDEN", "register is out of quote location scope", input.context.correlationId);

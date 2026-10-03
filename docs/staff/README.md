@@ -1,12 +1,12 @@
 # CETECH POS staff documentation
 
-**Current testing documents updated:** 2 October 2026 — urgent price-delay qualification.
+**Current testing documents updated:** 3 October 2026 — management correction candidate.
 
 **Read and understand the current Test Brief first.**
 
-The price-delay correction is under qualification. Check the brief for the confirmed live build before retesting prices.
+The management candidate is under qualification. Check the brief for the confirmed live build before testing its new controls.
 
-[Open the formatted testing documents](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/docs/staff-test-readable-2026-10-02/docs/staff/testing-2026-10-02#readme) — the brief, guide, and workbook.
+[Open the formatted testing documents](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/management-remediation-2026-10-03/docs/staff/testing-2026-10-02#readme) — the brief, guide, and workbook.
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
 

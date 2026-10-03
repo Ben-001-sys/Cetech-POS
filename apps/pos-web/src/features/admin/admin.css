@@ -1159,6 +1159,23 @@
 .management-skeleton-value { width: 38%; height: 28px; }
 .management-skeleton-title { width: 40%; height: 20px; }
 .management-skeleton-body { height: 58px; }
+.management-loading > [aria-hidden] { min-width: 0; }
+.management-skeleton-banner {
+  display: grid;
+  gap: 12px;
+  min-height: 86px;
+  background: var(--color-surface);
+}
+.management-skeleton-field { height: 44px; }
+.management-skeleton-pill { flex: 0 0 96px; width: 96px; max-width: 100%; height: 28px; }
+.management-skeleton-toggle { flex: 0 0 20px; width: 20px; height: 20px; }
+.management-skeleton-copy { flex: 1 1 0; min-width: 0; }
+.management-skeleton-receipt { width: min(100%, 302px); height: 320px; }
+.management-return-detail { margin-top: 16px; min-width: 0; }
+.management-return-lines,
+.management-return-effects { display: grid; gap: 8px; padding-left: 20px; }
+.management-return-detail p,
+.management-return-detail li { overflow-wrap: anywhere; }
 
 .shift-cash-money dd,
 .shift-cash-stat strong,

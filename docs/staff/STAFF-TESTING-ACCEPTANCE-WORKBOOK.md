@@ -1,8 +1,10 @@
 # CETECH POS — Staff Testing & Acceptance Workbook
 
-**Updated for this testing round:** 2 October 2026 — price-check timing and retry checks added.
+**Updated for this testing round:** 3 October 2026 — management candidate checks added.
 
 **UI refinement candidate — 3 October 2026:** Additional guidance marked **Candidate UI** describes `ws1/ui-refinement-2026-10-03`. Use it only when the coordinator confirms that candidate in the Test Brief. This note does not mean the existing POS link has been updated.
+
+**Management remediation candidate — 3 October 2026:** Guidance marked **Candidate Management** describes the current management correction candidate. Use it only after the coordinator confirms its exact build in the Test Brief. Source changes and these instructions do not establish that the shared POS link has changed or that a reported live problem is resolved.
 
 **Read and understand the [current Test Brief](TEST-BRIEF-2026-10-02.md) first.**
 
@@ -164,6 +166,8 @@ Do not mark a blocked test as PASS.
 
 Test Owner/Admin/Manager/Support/Cashier.
 
+**Candidate Management check:** Open Staff & access, Locations, Registers, Devices, Returns & approvals and Receipt settings where your role permits. If loading lasts long enough to see, compare the grey placeholders with the page's real cards, work items or receipt editor/preview afterward. Confirm placeholders disappear into actual results, an honest empty state or an error. Record loading too quick to observe as such; a screenshot of placeholders alone is not proof of readiness. Requests must finish or show a bounded error/timeout and release their busy controls.
+
 **Expected:**
 - Cashier: no Management control plane.
 - Manager: only permitted management scope/locations.
@@ -223,11 +227,18 @@ Owner/Admin test.
 
 ## T133 — Disable POS access
 
+**Candidate Management check:** Use a separate agreed test account, never the active testers or your own account. Compare its sign-in email, login-account state and POS-access state. Use **Show staff** to check Active staff, Inactive staff and Unlinked references. Do not invent an unlinked reference or alter an identity merely to obtain one; record unavailable cases as COULD NOT TEST.
+
+Select **Deactivate staff**, then **Keep active**, and confirm nothing changed. Repeat and choose **Confirm deactivation**. Verify the person is signed out and cannot establish a new POS session; inspect their retained record under **Inactive staff**. With authorization, **Reactivate staff** and verify normal sign-in again. A disabled/unlinked login cannot be reactivated through POS access alone. If a save fails, its card and permitted controls must remain visible alongside the error.
+
 **Expected:**
 - disabled staff loses active POS sessions;
 - cannot establish a new POS session;
 - a new sign-in shows **Your POS access is disabled. Contact a manager.** and does not add a Reference line;
-- audit/management record reflects the change.
+- audit/management record reflects the change;
+- deactivation retains sales, shifts, assignments and activity history rather than deleting the account;
+- a linked card shows the actual sign-in email; an unlinked reference is explicitly identified and has no password reset, role grant or new-assignment controls;
+- login-account availability and POS-access state are not combined into a misleading single status.
 
 ### Your result
 
@@ -244,7 +255,10 @@ Owner/Admin test.
 **Expected:**
 - Admin cannot reset/control an Owner in ways reserved for Owner;
 - at least one active Owner remains;
-- Manager cannot grant themselves organization control.
+- Manager cannot grant themselves organization control;
+- ordinary staff deactivation cannot target yourself or an Owner;
+- an Admin cannot reactivate an Owner;
+- disabled or unlinked login accounts do not receive a POS-reactivation control.
 
 ### Your result
 
@@ -283,6 +297,12 @@ Owner/Admin test.
 - inactive location/register/device behavior is clear;
 - a location without active POS device cannot open its register shift;
 - register currency cannot be casually changed after creation.
+
+**Candidate Management check:** On a spare agreed setup, use **Deactivate location**, **Disable register** and **Deactivate device**. Cancel first, then confirm the permitted change; inspect the retained entry and use its **Reactivate** action. No history or assignments should disappear. After deactivation, rename/save the retained entry and verify that it does not silently become active again.
+
+With the coordinator's controlled open shift, attempt the affected lifecycle change or device relocation. It must be blocked with an instruction to close or resolve that shift; the existing entry and retry controls remain visible. Check Closing and Needs attention cases only when safely supplied by the coordinator; do not manufacture them by interrupting sales. Closed-only history may remain while an unused setup is deactivated.
+
+An inactive location must reject a new shift even when its register/device is active. A newly active register/device cannot be created or reactivated under an inactive parent location. Owner/Admin performs changes; Manager remains read-only.
 
 ### Your result
 
@@ -925,6 +945,17 @@ Owner/Admin changes; Manager view-only.
 
 Preview a business name/address/footer change before saving. Upload a small valid PNG/JPEG logo if available. Try the customer/cashier display choices. Use **Test print (sample)**, then match **Printer paper width on this device** to the physical printer. After saving, use a separately agreed new sale to check the actual receipt. Change a presentation setting and reprint that completed receipt to check preservation. Restore shared settings after coordinated testing.
 
+**Candidate Management check:** Agree on the affected locations first; applying shared layout changes future receipts across the organization. Record the shared defaults and each test location's local address/contact/tax fields before starting.
+
+1. Choose **Shared defaults — all locations**, change the shared business name/logo/footer/display choices, preview, then **Save shared defaults**. Existing location rows must remain unchanged until explicit adoption.
+2. Open **Apply shared layout to all locations**, review the warning, then **Cancel**. Confirm no location changed.
+3. Repeat and choose **Confirm: apply shared layout**. Verify future receipt layout follows the saved common settings while each location's explicit address, phone, tax number and actual location name remain correct. The action must be disabled while shared changes are unsaved.
+4. Under **Location overrides**, customize one field only and **Save location overrides**. Verify unchecked fields inherit the shared values. Check a deliberate local false, blank or removed-logo choice where permitted; it must not be replaced by the shared value.
+5. On a spare agreed location only, inspect **Use shared settings for this location**. Its confirmation explains that all local receipt overrides, including address/contact/tax details, will be cleared. Cancel unless that complete reset is authorized.
+6. Reprint a receipt completed before these changes. Its stored layout and presentation must remain unchanged. Confirm the printer's device paper width also stayed unchanged.
+
+Managers must receive a scoped read-only location view, without shared-save, bulk-apply or local-save actions.
+
 **Expected:**
 - shortening changes future receipt display only;
 - catalog product name stays unchanged;
@@ -1073,6 +1104,12 @@ Record any missing/confusing options.
 
 Manager test only.
 
+**Candidate Management check:** In Management → Returns & approvals, use **Review existing return** on an agreed saved return. Verify original items, reasons, allocated amounts and separate refund/stock states. Opening or refreshing the details must not approve, refund or change stock.
+
+Check a current approval-required return at your managed location. **Approve return** records approval for that same return; the cashier then continues it. An Owner/Admin without an operational Manager assignment must not get approval or refund-check authority from the organization role alone. A Manager outside the return location must not receive those actions.
+
+An expired preview belongs under **History**, shows **Return preview expired**, and cannot be approved/completed. A preview with unconfirmed validity explains that it needs review. A valid Pending preview must explain that it is not a pending approval. Counts are work items; separate refund/stock entries must not be mistaken for additional approval requests. Record missing safe examples as COULD NOT TEST.
+
 **Expected:**
 - authorized manager can approve the existing return where required;
 - cashier can continue the same return;
@@ -1101,7 +1138,11 @@ Manager test only.
 2. If offered, select **Repair this sale** once. Confirm the POS resumes the same original order and total on Sell; repair must not take payment or create a second order.
 3. Stop at payment choice for this check. Record whether the same saved sale resumed. Do not confirm cash or start an electronic payment for this recovery-only test.
 4. In a separately agreed expired-session case, confirm recovery opens sign-in and keeps the cart and unfinished work. Signing in must not automatically resend the operation.
-5. A missing/mismatched saved attempt, another person's attempt, existing payment, or unproven order/reservation must remain blocked with a clear result. Manager access must not bypass these checks. If a recovered reservation expires before payment, confirm no new payment starts; status checks for already-recorded payment must remain available.
+5. The original-device recovery must block a missing/mismatched saved attempt, another person's attempt, existing payment, or unproven order/reservation with a clear result. Manager access must not bypass those local checks. If a recovered reservation expires before payment, confirm no new payment starts; status checks for already-recorded payment must remain available.
+
+**Candidate Management check:** For a separately agreed server-recorded unfinished sale, use **Manager sale recovery → Check original sale** as an operational Manager at that sale's location. Checking reads the same original sale and causes no repair or payment. **Repair this sale** is offered only after original request/order/reservation/register/device/shift evidence is proved. If offered, select it once, record the result and stop before any payment.
+
+Success directs you to the original register to check and continue the same sale, and explicitly states that no payment was taken. This must not create a new order, collect payment or replace the manager's current cart. Missing original evidence, unsafe order/reservation state, wrong location role or Owner/Admin-only membership must stay blocked with an explanation. An unavailable or timed-out check must release its busy control; inspect this same existing sale before retrying. Do not use real unknown payment outcomes to manufacture this test. Record cases not safely supplied by the coordinator as COULD NOT TEST.
 
 **Expected:**
 - outstanding work is understandable;

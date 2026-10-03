@@ -179,3 +179,18 @@ describe("ReceiptSettingsPanel", () => {
     expect(html).not.toContain("Foundation screen only");
   });
 });
+
+test("scope navigation remains available for empty locations, loading and failed reads", () => {
+  const empty = renderToStaticMarkup(<ReceiptSettingsPanel locations={[]} scope="location" view={null} onSelectScope={() => undefined} />);
+  expect(empty).toContain("No locations are available for receipt settings.");
+  expect(empty).toContain("Receipt settings scope");
+  expect(empty).toContain("Shared defaults — all locations");
+  expect(empty).not.toContain("Loading receipt settings");
+  const failed = renderToStaticMarkup(<ReceiptSettingsPanel locations={[]} scope="organization" view={null} errorMessage="Read failed" onSelectScope={() => undefined} />);
+  expect(failed).toContain("Receipt settings scope");
+  expect(failed).toContain("Read failed");
+  const loading = renderToStaticMarkup(<ReceiptSettingsPanel locations={[]} scope="organization" view={null} loading onSelectScope={() => undefined} />);
+  expect(loading).toContain("Receipt settings scope");
+  expect(loading).toContain("Loading receipt settings");
+  expect(loading).not.toContain("No locations are available");
+});

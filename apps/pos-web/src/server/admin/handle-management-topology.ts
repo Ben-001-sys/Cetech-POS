@@ -119,6 +119,12 @@ export async function handleSaveManagementTopology(input: {
       ? await input.topology.saveRegister({ ...shared, ...input.change })
       : await input.topology.saveDevice({ ...shared, ...input.change });
 
+  if (saved === "busy") {
+    return apiFailure("SHIFT_CONFLICT", "Close or resolve affected shifts before deactivating, disabling or moving this location, register or device.", input.correlationId);
+  }
+  if (saved === "inactive-parent") {
+    return apiFailure("VALIDATION_ERROR", "Reactivate the location before making this register or device active.", input.correlationId);
+  }
   if (saved === "invalid") {
     return apiFailure("VALIDATION_ERROR", "That location, register, or device change is not allowed.", input.correlationId);
   }

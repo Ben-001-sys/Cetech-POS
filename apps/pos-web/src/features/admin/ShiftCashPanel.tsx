@@ -48,7 +48,7 @@ export function ShiftCashPanel({
   readonly now?: Date;
 }) {
   if (loading) {
-    return <ManagementLoading message="Loading shifts and cash…" />;
+    return <ManagementLoading variant="shifts" message="Loading shifts and cash…" />;
   }
   if (errorMessage) {
     return (

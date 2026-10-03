@@ -200,6 +200,25 @@ function repairPort(result: PreparedSale = prepared(), initial: ApiResult<SaleRe
   return { salesPort, seen };
 }
 
+describe("new-sale inactive location guard", () => {
+  test("new prepare cannot invoke commerce at an inactive parent location", async () => {
+    const { store, catalogLookup } = await seed();
+    const register = await store.getRegister("reg_a1");
+    if (!register) throw new Error("missing fixture");
+    await store.seedRegister({ ...register, locationStatus: "inactive" });
+    const prepare = vi.fn<SalesPort["prepare"]>();
+    const resolve = vi.fn<SalesPort["resolve"]>();
+    const result = await prepareSale({ store, catalogLookup, actor: ACTOR,
+      request: request(), context: context(), now: NOW, salesPort: { prepare, resolve },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("location is inactive");
+    expect(prepare).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(await store.getSale(TX)).toBeUndefined();
+  });
+});
+
 describe("explicit original-order prepare repair", () => {
   test("initial settlement and GET checks do not dispatch a repair", async () => {
     const runtime = await unfinished();

@@ -28,6 +28,8 @@ export type StoredRegister = Register & {
   readonly organizationId: Id;
   /** Human location label captured for new receipts. Absent on older register rows. */
   readonly locationName?: string;
+  /** Durable parent lifecycle for new work. Absent only on legacy/local fixtures. */
+  readonly locationStatus?: "active" | "inactive";
 };
 
 export type StoredDevice = {

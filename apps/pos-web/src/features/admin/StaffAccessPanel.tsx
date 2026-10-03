@@ -72,11 +72,14 @@ export function StaffAccessPanel({
     readonly enableAccess: boolean;
   }) => void;
 }) {
+  const [filter, setFilter] = useState<"all" | "active" | "inactive" | "unlinked">("all");
+  const visibleRows = rows.filter((row) => {
+    const linked = hasLinkedIdentity(row);
+    const active = linked && row.authStatus === "active" && (row.posAccessStatus ?? "active") === "active";
+    return filter === "all" || (filter === "unlinked" ? !linked : filter === "active" ? active : linked && !active);
+  });
   if (loading) {
-    return <ManagementLoading message="Loading staff access…" />;
-  }
-  if (errorMessage) {
-    return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;
+    return <ManagementLoading variant="staff" showCreate={canManage && Boolean(onInviteStaff && onCreateStaff)} message="Loading staff access…" />;
   }
   const addStaff = canManage && onInviteStaff && onCreateStaff ? (
     <AddStaffCard
@@ -88,19 +91,30 @@ export function StaffAccessPanel({
     />
   ) : null;
 
-  if (rows.length === 0) {
-    return (
-      <div className="management-staff-list">
-        {addStaff}
-        <section className="card card-pad"><p>No staff records are visible in your management scope.</p></section>
-      </div>
-    );
-  }
-
   return (
     <div className="management-staff-list">
+      {errorMessage ? <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section> : null}
       {addStaff}
-      {rows.map((row) => (
+      <section className="card card-pad stack">
+        <label className="stack">
+          Show staff
+          <select className="select" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+            <option value="all">All staff and references</option>
+            <option value="active">Active staff</option>
+            <option value="inactive">Inactive staff</option>
+            <option value="unlinked">Unlinked references</option>
+          </select>
+        </label>
+        <p className="muted">Deactivating staff removes their POS access and signs them out. Their sales, shifts and activity history stay available.</p>
+        {!canManage ? (
+          <p className="muted">Owners and Admins manage staff accounts. Managers may change register access for staff already assigned to their locations.</p>
+        ) : null}
+        <p role="status" className="muted">Showing {visibleRows.length} of {rows.length} staff records.</p>
+      </section>
+      {visibleRows.length === 0 ? (
+        <section className="card card-pad"><p>{rows.length === 0 ? errorMessage ? "Staff records are unavailable while this request cannot be checked." : "No staff records are visible in your management scope." : "No staff match this view. Choose another view to see their retained records."}</p></section>
+      ) : null}
+      {visibleRows.map((row) => (
         <StaffCard
           key={row.actorId}
           row={row}
@@ -161,6 +175,7 @@ function StaffCard({
     readonly temporaryPassword: string;
   }) => void;
 }) {
+  const linked = hasLinkedIdentity(row);
   const firstUnassigned = topology.find(
     (location) => !row.locations.some((assignment) => assignment.locationId === location.id),
   );
@@ -168,12 +183,13 @@ function StaffCard({
     <section className="card card-pad stack management-staff-card" aria-busy={saving}>
       <div className="management-staff-head">
         <div>
-          <h2>{row.displayName}</h2>
-          <p className="muted">{row.email ?? "Staff account"}</p>
+          <h2>{linked ? row.displayName : "Unlinked staff reference"}</h2>
+          <p className="muted">{linked ? row.email ? `Sign-in email: ${row.email}` : "No sign-in email is recorded for this account." : "No matching login account was found. This reference is retained for access and activity history."}</p>
+          {linked && row.lastSignInAt ? <p className="muted">Last sign-in: <time dateTime={row.lastSignInAt}>{signInTime(row.lastSignInAt)}</time></p> : null}
         </div>
         <div className="management-staff-statuses">
           <span className={row.authStatus === "active" ? "status-pill success" : "status-pill warning"}>
-            Account {row.authStatus}
+            {linked ? `Login account ${row.authStatus}` : "Login account not linked"}
           </span>
           <span className={(row.posAccessStatus ?? "active") === "active" ? "status-pill success" : "status-pill warning"}>
             POS access {row.posAccessStatus ?? "active"}
@@ -186,7 +202,7 @@ function StaffCard({
           callerControlRole={callerControlRole}
           currentActorId={currentActorId}
           saving={saving}
-          onSave={onSaveControlMembership}
+          onSave={linked ? onSaveControlMembership : undefined}
         />
         <details className="management-reference">
           <summary>Reference</summary>
@@ -204,13 +220,14 @@ function StaffCard({
         />
       ) : null}
 
-      {canManage && onResetTemporaryPassword ? (
+      {canManage && linked && onResetTemporaryPassword ? (
         callerControlRole === "admin" && row.controlRole === "owner" ? (
           <p className="muted">An admin cannot reset an owner password.</p>
         ) : (
           <PasswordResetEditor actorId={row.actorId} saving={saving} onSave={onResetTemporaryPassword} />
         )
       ) : null}
+      {!linked ? <p className="muted">A password cannot be reset for this reference. Ask an Owner or Admin to check its identity mapping before restoring access.</p> : null}
 
       <div className="stack">
         <strong>Location and register assignments</strong>
@@ -221,13 +238,13 @@ function StaffCard({
             actorId={row.actorId}
             assignment={assignment}
             location={topology.find((item) => item.id === assignment.locationId)}
-            canManage={canManage}
-            registersOnly={!canManage && managedLocationIds.includes(assignment.locationId) && row.actorId !== currentActorId}
+            canManage={canManage && linked}
+            registersOnly={linked && !canManage && managedLocationIds.includes(assignment.locationId) && row.actorId !== currentActorId}
             saving={saving}
             onSave={onSaveAssignment}
           />
         ))}
-        {canManage && firstUnassigned && onSaveAssignment ? (
+        {canManage && linked && firstUnassigned && onSaveAssignment ? (
           <NewAssignmentEditor
             actorId={row.actorId}
             topology={topology}
@@ -519,6 +536,7 @@ function ControlRoleEditor({
 function StaffAccessStatusEditor({
   row,
   currentActorId,
+  callerControlRole,
   saving,
   onSave,
 }: {
@@ -533,32 +551,57 @@ function StaffAccessStatusEditor({
   }) => void;
 }) {
   const status = row.posAccessStatus ?? "active";
+  const [confirming, setConfirming] = useState(false);
   const cannotDisable = currentActorId === row.actorId || row.controlRole === "owner";
   const next = status === "active" ? "disabled" : "active";
+  const ownerProtectedFromAdmin = callerControlRole === "admin" && row.controlRole === "owner";
+  const cannotReactivate = !hasLinkedIdentity(row) || row.authStatus !== "active" || ownerProtectedFromAdmin;
   return (
     <div className="management-access-control">
       <div>
-        <strong>POS access</strong>
+        <strong>Staff access</strong>
         <small className="muted">
-          Disabling POS access signs this staff member out of active POS sessions and blocks new POS sign-in.
+          Deactivation signs this staff member out and blocks new POS sign-in. It keeps their sales, shifts, assignments and activity history.
         </small>
+        {cannotDisable && next === "disabled" ? <p className="muted">{currentActorId === row.actorId ? "You cannot deactivate your own current management access." : "Transfer or remove Owner authority before deactivating this staff member."}</p> : null}
+        {cannotReactivate && next === "active" ? <p className="muted">{ownerProtectedFromAdmin ? "Only an Owner can reactivate another Owner's POS access." : "Restore a linked, active login account before reactivating POS access."}</p> : null}
       </div>
       <button
         className={next === "disabled" ? "btn small" : "btn small primary"}
         type="button"
-        disabled={saving || (next === "disabled" && cannotDisable)}
+        disabled={saving || confirming || (next === "disabled" ? cannotDisable : cannotReactivate)}
         onClick={() =>
-          onSave({
+          next === "disabled" ? setConfirming(true) : onSave({
             actorId: row.actorId,
             status: next,
-            reason: next === "disabled" ? "Disabled from POS management" : undefined,
           })
         }
       >
-        {saving ? "Saving…" : next === "disabled" ? "Disable POS access" : "Re-enable POS access"}
+        {saving ? "Saving…" : next === "disabled" ? "Deactivate staff" : "Reactivate staff"}
       </button>
+      {confirming && next === "disabled" ? (
+        <div className="stack" role="group" aria-label="Confirm staff deactivation">
+          <p>Deactivate {hasLinkedIdentity(row) ? row.displayName : "this staff reference"}? Active POS sessions will end. Historical records will remain.</p>
+          <div className="row">
+            <button className="btn small" type="button" disabled={saving} onClick={() => setConfirming(false)}>Keep active</button>
+            <button className="btn small" type="button" disabled={saving} onClick={() => {
+              setConfirming(false);
+              onSave({ actorId: row.actorId, status: "disabled", reason: "Staff deactivated from POS management; history retained" });
+            }}>Confirm deactivation</button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function hasLinkedIdentity(row: StaffAccessRecord): boolean {
+  return row.identityStatus !== "unlinked" && row.authStatus !== "unknown";
+}
+
+function signInTime(value: string): string {
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? "Not available" : `${time.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
 

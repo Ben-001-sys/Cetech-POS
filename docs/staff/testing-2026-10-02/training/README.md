@@ -1,10 +1,12 @@
 # CETECH POS — Staff Training & User Guide
 
-**Updated for this testing round:** 2 October 2026 — price-check instructions revised.
+**Updated for this testing round:** 3 October 2026 — management candidate guidance added.
 
 **UI refinement candidate — 3 October 2026:** Additional guidance marked **Candidate UI** describes `ws1/ui-refinement-2026-10-03`. Use it only when the coordinator confirms that candidate in the Test Brief. This note does not mean the existing POS link has been updated.
 
-**Read and understand the [current Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) first.**
+**Management remediation candidate — 3 October 2026:** Guidance marked **Candidate Management** describes the current management correction candidate. Use it only after the coordinator confirms its exact build in the Test Brief. Source changes and these instructions do not establish that the shared POS link has changed or that a reported live problem is resolved.
+
+**Read and understand the [current Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/management-remediation-2026-10-03/docs/staff/testing-2026-10-02/brief) first.**
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
 
@@ -468,7 +470,15 @@ The important rule is:
 4. After a successful repair, the POS opens **Sell** with the same saved sale and payment choice. Check the order and total before continuing the normal payment steps.
 5. If repair cannot prove the original unpaid order and current stock reservation, the sale stays blocked and the result explains why. Record that result for the coordinator. Do not clear browser data, start the same sale again, or retry payment. If the stock reservation expires before you choose payment, new payment stays closed; ask the coordinator to check this same order. Existing payment status can still be checked.
 
-Managers use the same checks. Manager access does not override an unresolved order, missing saved attempt, payment already in progress, another person's saved work, or expired sign-in. Repair is available only for the original matching saved attempt; taking over a different person's unfinished sale requires a separate approved recovery procedure.
+Managers use the same original-device checks. That local recovery action requires the original matching saved attempt; Manager access does not override missing local work, another person's saved work, payment already in progress or expired sign-in.
+
+**Candidate Management:** A separate **Manager sale recovery** panel may appear in Needs attention for existing server-recorded sales within an operational Manager's permitted location scope. Select **Check original sale** first. This reads the original sale without repairing it or taking payment.
+
+**Repair this sale** appears there only after the server confirms the original saved request, the same existing unpaid order, current reservation, original active register/device and open shift, and your location authority. Select it once if offered. It rechecks that evidence and repairs the original sale; it does not create another order, charge a customer or complete payment.
+
+If recovery creates the missing POS sale record, it records the recovering manager as the staff member who prepared it; existing recorded cashier details stay unchanged. The activity log records the manager recovery.
+
+On success, the result says to return to the sale's original register and continue that same sale after checking its current status. No payment was taken. This panel does not automatically turn the manager's current cart into that sale. If original details or safe evidence cannot be proved, use the original device or contact the coordinator/support; do not invent a replacement sale. Owner/Admin membership alone does not grant this operational recovery authority. A source change or recovery button does not prove a reported live sale has already been repaired.
 
 ---
 
@@ -627,6 +637,14 @@ Disabling POS access:
 
 Do not disable your own access casually.
 
+**Candidate Management:** **Show staff** lets you choose **All staff and references**, **Active staff**, **Inactive staff**, or **Unlinked references**. A linked staff card shows its actual sign-in email, login-account state and POS-access state separately. **Last sign-in** is shown in UTC when available; it is not a promise that the person currently has a working POS session.
+
+**Unlinked staff reference** means no matching login account was found for the saved staff reference. The reference stays visible for history. Do not guess an email, merge people by name, or reset a password on an unlinked reference. If account lookup itself is unavailable, record that error; it does not prove the account is missing.
+
+Owner/Admin can select **Deactivate staff**, review the explanation, then choose **Confirm deactivation** or **Keep active**. Deactivation blocks POS access and revokes active POS sessions. Sales, shifts, assignments and activity history are kept; it does not delete the person's account or erase prior work. **Inactive staff** lets you find the retained record.
+
+**Reactivate staff** restores POS access only when a linked, enabled login account is available and your authority permits it. A disabled or unlinked login needs authorized account review first. You cannot deactivate yourself or an Owner through this ordinary action; transfer/demote Owner responsibility through the authorized role flow first, keeping an active Owner. An Admin cannot reactivate an Owner. Managers retain their permitted register-assignment controls for staff already assigned to a managed location; they do not gain account-deactivation or organization-role powers.
+
 ---
 
 ## 28. Organization roles
@@ -656,6 +674,10 @@ Owner/Admin can add or update locations.
 
 Locations are normally deactivated rather than deleted.
 
+**Candidate Management:** Select **Deactivate location**, review the retained-history explanation, then select **Confirm deactivate**. **Cancel** makes no change. **Reactivate location** makes the retained location available for new work again after confirmation.
+
+Deactivation keeps sales, receipts, staff assignments and history. Close or resolve affected shifts first: an open, closing or needs-attention shift blocks deactivation. An inactive location cannot open a new shift or start a new sale, even if its register and device are still active. Managers can inspect locations they manage; only Owner/Admin can change their availability.
+
 Use meaningful names staff will recognize.
 
 ---
@@ -675,6 +697,8 @@ The currency/location relationship is intentionally controlled. Do not casually 
 
 A register may be unable to open a shift if its location has no active POS device.
 
+**Candidate Management:** Owner/Admin can select **Disable register** and confirm, or **Reactivate register** for a disabled register. Existing sales and shift history are kept. An open, closing or needs-attention shift blocks disablement or a change into Maintenance. Reactivate the location before reactivating a disabled register. A failed change keeps the current register and its controls visible; read the result before trying again.
+
 ---
 
 ## 31. Devices
@@ -684,6 +708,8 @@ Owner/Admin can add or manage POS devices by location.
 A device is assigned to a location and can be Active or Inactive.
 
 Do not use made-up device IDs or browser-generated IDs as operational device authority.
+
+**Candidate Management:** Owner/Admin can select **Deactivate device** or **Reactivate device** and confirm. Device history remains. Deactivation or moving a device to another location is blocked while it belongs to an open, closing or needs-attention shift. An inactive location cannot accept a newly active device; reactivate the location first.
 
 ---
 
@@ -717,6 +743,14 @@ Approval does not itself create a new refund or change stock.
 
 A manager should never create a second refund merely because an existing one is awaiting confirmation.
 
+**Candidate Management:** **Review existing return** opens saved items, return reasons, allocated amounts and separate refund/stock records for that same return. Reviewing does not send a refund, approve a return or change stock. **Refresh return details** reads that same saved return again.
+
+**History** includes completed returns and expired previews that were never executed. **Return preview expired** is not a pending approval and cannot be approved or completed. If a return is still needed, review the original sale again through Returns. **Return preview needs review** means its validity cannot be confirmed. A current **Return preview** in Pending is still a preview, not a pending approval.
+
+Counts represent work items. One return may have separate refund, stock and unfinished-operation entries, so the count is not a count of customers waiting for approval.
+
+**Approve return** is available only to an operational Manager assigned at that return's location, for a current return requiring approval. **Check refund** keeps the corresponding manager/location restriction. Owner/Admin membership alone does not grant either action. An explanation on a read-only entry tells you why no action is offered; keep the same return instead of inventing a replacement.
+
 ---
 
 ## 34. Operational rules
@@ -737,7 +771,25 @@ More specific rules can override broader defaults.
 
 ## 35. Receipt settings
 
-Receipt settings are configured per location.
+Receipt settings remain limited to your authorized scope.
+
+**Candidate Management:** Owner/Admin can choose **Shared defaults — all locations** or **Location overrides** under **Receipt settings scope**. Existing location settings remain unchanged when shared defaults are first saved; they start inheriting only where an authorized operator explicitly changes or clears the relevant local choices.
+
+For the common receipt layout:
+
+1. choose **Shared defaults — all locations**;
+2. set the shared business name, logo, footer and display choices;
+3. check **Live receipt preview**, then select **Save shared defaults**;
+4. select **Apply shared layout to all locations**;
+5. review the effect, then select **Confirm: apply shared layout**, or **Cancel**.
+
+This replaces local layout choices with the saved common layout while keeping each location's explicit address, contact phone and tax-registration number, and the actual location name. Historical receipts and device paper width stay unchanged. Unsaved shared changes must be saved before applying the layout to all locations.
+
+Under **Location overrides**, choose a location and check **Customize [field] for this location** only for a difference that belongs there. Unchecked fields inherit shared defaults. Where that field permits it, a checked blank, false or removed-logo choice is an explicit local difference, rather than an instruction to use the shared value. Select **Save location overrides** after reviewing the effective receipt preview.
+
+**Use shared settings for this location** has a broader effect than applying the common layout: after **Confirm: use shared settings**, it clears all receipt overrides for that location, including local address/contact/tax details. Review that explanation before confirming. The actual location name is retained.
+
+Managers can inspect their permitted location settings and sample prints. They cannot edit organization defaults, apply a layout to all locations or save local changes.
 
 Owner/Admin can control:
 
@@ -766,6 +818,10 @@ Management System status can show more diagnostic information than cashier Syste
 It may include a collapsible **Technical detail** or Reference section.
 
 Technical detail is for authorized management/support use. It should not be necessary for a cashier to finish an ordinary sale.
+
+**Candidate Management:** Grey loading placeholders follow the Management page being opened: staff cards, location/register/device cards, return work items, or receipt editor/preview. They give way to actual results, an empty state or an error. They are not completed records and are not proof that the underlying service became faster.
+
+Management requests must finish with a result or a clear timeout/error; a button should not remain stuck on Saving, Approving or Checking. A timeout does not prove that a change failed. Review the same saved record and the displayed result before trying again, particularly for approval, recovery or refund checks. Keep browser/POS saved data.
 
 ---
 

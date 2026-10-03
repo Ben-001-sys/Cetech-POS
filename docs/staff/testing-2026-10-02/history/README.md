@@ -1,4 +1,4 @@
-> **Historical record — 24 September 2026.** Do not use its old POS link for the current round. Read the [current brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) first.
+> **Historical record — 24 September 2026.** Do not use its old POS link for the current round. Read the [current brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/management-remediation-2026-10-03/docs/staff/testing-2026-10-02/brief) first.
 
 ---
 

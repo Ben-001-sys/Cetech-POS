@@ -42,7 +42,9 @@ export type SavedDevice = {
   readonly status: "active" | "inactive";
 };
 
-export type TopologyMutation = SavedLocation | SavedRegister | SavedDevice | "invalid" | "outside" | "unavailable";
+export type TopologyMutationFailure = "invalid" | "outside" | "unavailable" | "busy" | "inactive-parent";
+
+export type TopologyMutation = SavedLocation | SavedRegister | SavedDevice | TopologyMutationFailure;
 
 export interface ManagementTopologyDirectory {
   listOrganization(input: {
@@ -55,7 +57,7 @@ export interface ManagementTopologyDirectory {
     readonly locationId?: string;
     readonly name: string;
     readonly status: "active" | "inactive";
-  }): Promise<SavedLocation | "invalid" | "outside" | "unavailable">;
+  }): Promise<SavedLocation | TopologyMutationFailure>;
   saveRegister(input: {
     readonly organizationId: string;
     readonly actorId: string;
@@ -65,7 +67,7 @@ export interface ManagementTopologyDirectory {
     readonly name: string;
     readonly currency?: string;
     readonly status: "active" | "disabled" | "maintenance";
-  }): Promise<SavedRegister | "invalid" | "outside" | "unavailable">;
+  }): Promise<SavedRegister | TopologyMutationFailure>;
   saveDevice(input: {
     readonly organizationId: string;
     readonly actorId: string;
@@ -74,7 +76,7 @@ export interface ManagementTopologyDirectory {
     readonly locationId: string;
     readonly label: string;
     readonly status: "active" | "inactive";
-  }): Promise<SavedDevice | "invalid" | "outside" | "unavailable">;
+  }): Promise<SavedDevice | TopologyMutationFailure>;
 }
 
 export function createMemoryManagementTopologyDirectory(
@@ -118,6 +120,7 @@ export function createMemoryManagementTopologyDirectory(
         const current = location.registers.find((row) => row.id === input.registerId);
         if (!current) return "outside";
         if (input.currency && input.currency !== current.currency) return "invalid";
+        if (input.status === "active" && current.status !== "active" && location.status === "inactive") return "inactive-parent";
         current.name = name;
         current.status = input.status;
         return {
@@ -128,6 +131,7 @@ export function createMemoryManagementTopologyDirectory(
           status: current.status,
         };
       }
+      if (input.status === "active" && location.status === "inactive") return "inactive-parent";
       const currency = input.currency?.trim().toUpperCase();
       if (!currency || !/^[A-Z]{3}$/.test(currency)) return "invalid";
       const id = `reg_${location.registers.length + 1}`;
@@ -144,11 +148,13 @@ export function createMemoryManagementTopologyDirectory(
         const currentLocation = state.find((row) => row.devices.some((device) => device.id === input.deviceId));
         const current = currentLocation?.devices.find((device) => device.id === input.deviceId);
         if (!current || !currentLocation) return "outside";
+        if (input.status === "active" && (current.status !== "active" || currentLocation.id !== location.id) && location.status === "inactive") return "inactive-parent";
         currentLocation.devices = currentLocation.devices.filter((device) => device.id !== current.id);
         const saved = { id: current.id, label, status: input.status };
         location.devices.push(saved);
         return { ...saved, locationId: location.id };
       }
+      if (input.status === "active" && location.status === "inactive") return "inactive-parent";
       const id = `device-${location.devices.length + 1}`;
       const saved = { id, label, status: input.status };
       location.devices.push(saved);
@@ -302,10 +308,16 @@ export function createSupabaseManagementTopologyDirectory(input: {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (response.status === 400) return "invalid";
-      if (response.status === 409) return "outside";
-      if (!response.ok) return "unavailable";
-      return await response.json();
+      const result = await response.json();
+      if (!response.ok) {
+        if (record(result) && result.code === "55000") return "busy";
+        if (record(result) && result.code === "23514" && result.message === "parent location is inactive") return "inactive-parent";
+        if (record(result) && result.code === "23503") return "outside";
+        if (response.status === 400) return "invalid";
+        if (response.status === 409) return "outside";
+        return "unavailable";
+      }
+      return result;
     } catch {
       return "unavailable";
     }
@@ -316,15 +328,15 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function savedLocation(body: unknown): SavedLocation | "invalid" | "outside" | "unavailable" {
-  if (body === "invalid" || body === "outside" || body === "unavailable") return body;
+function savedLocation(body: unknown): SavedLocation | TopologyMutationFailure {
+  if (body === "invalid" || body === "outside" || body === "unavailable" || body === "busy" || body === "inactive-parent") return body;
   if (!record(body) || typeof body.id !== "string" || typeof body.name !== "string") return "unavailable";
   if (body.status !== "active" && body.status !== "inactive") return "unavailable";
   return { id: body.id, name: body.name, status: body.status };
 }
 
-function savedRegister(body: unknown): SavedRegister | "invalid" | "outside" | "unavailable" {
-  if (body === "invalid" || body === "outside" || body === "unavailable") return body;
+function savedRegister(body: unknown): SavedRegister | TopologyMutationFailure {
+  if (body === "invalid" || body === "outside" || body === "unavailable" || body === "busy" || body === "inactive-parent") return body;
   if (
     !record(body) ||
     typeof body.id !== "string" ||
@@ -344,8 +356,8 @@ function savedRegister(body: unknown): SavedRegister | "invalid" | "outside" | "
   };
 }
 
-function savedDevice(body: unknown): SavedDevice | "invalid" | "outside" | "unavailable" {
-  if (body === "invalid" || body === "outside" || body === "unavailable") return body;
+function savedDevice(body: unknown): SavedDevice | TopologyMutationFailure {
+  if (body === "invalid" || body === "outside" || body === "unavailable" || body === "busy" || body === "inactive-parent") return body;
   if (
     !record(body) ||
     typeof body.id !== "string" ||

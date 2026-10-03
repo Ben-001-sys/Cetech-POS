@@ -7,10 +7,13 @@ import type { OperationalPolicyView } from "../server/admin/handle-operational-p
 import type { ManagementLocation } from "../server/admin/management-topology-directory";
 import type { ManagementShiftCashView } from "../server/admin/management-shift-cash-directory";
 import type { ManagementReturnsAttentionView } from "../server/admin/management-returns-attention-directory";
+import type { ManagementReturnDetailView } from "../server/admin/handle-management-return-detail";
 import type { ManagementReceiptSettingsView } from "../server/admin/handle-management-receipt-settings";
 import type { ManagementSystemHealthView } from "../server/admin/management-system-health";
 import type { ManagementAuditView } from "../server/admin/management-audit";
-import type { ReceiptSettings, RefundState, ReturnApprovalBinding, ShiftReport } from "../../../../docs/contracts/domain.generated";
+import type { ManagementSaleRecoveryView } from "../server/admin/management-sale-recovery";
+import type { PreparedSale, ReceiptSettings, RefundState, ReturnApprovalBinding, ShiftReport } from "../../../../docs/contracts/domain.generated";
+import type { ReceiptSettingsOverride, ReceiptSettingsScope } from "../core/receipt/settings-override";
 import type { CashCorrectionResult, ManagementCashMovement } from "../server/admin/cash-correction-admin-store";
 import type { StaffAssignmentMutationResult } from "../server/admin/staff-assignment-admin-store";
 import type { ControlMembershipMutationResult } from "../server/admin/control-membership-admin-store";
@@ -36,28 +39,65 @@ async function jsonResult<T>(
   init: RequestInit = {},
 ): Promise<ApiResult<T>> {
   const correlationId = crypto.randomUUID();
+  const mutation = !["GET", "HEAD"].includes((init.method ?? "GET").toUpperCase());
+  const controller = new AbortController();
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let stop: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    stop = () => {
+      controller.abort();
+      reject(new Error("Management request interrupted"));
+    };
+    // Cover both the request and response body. Some fetch implementations do
+    // not settle when aborted, so abort alone cannot release the saving state.
+    deadline = setTimeout(stop, mutation ? 45_000 : 20_000);
+    if (init.signal?.aborted) stop();
+    else init.signal?.addEventListener("abort", stop, { once: true });
+  });
   try {
-    const response = await fetchImpl(url, {
-      credentials: "include",
-      ...init,
-      headers: {
-        "x-correlation-id": correlationId,
-        ...(init.headers ?? {}),
-      },
-    });
-    return (await response.json()) as ApiResult<T>;
+    const headers = new Headers(init.headers);
+    headers.set("x-correlation-id", correlationId);
+    return await Promise.race([
+      (async () => {
+        const response = await fetchImpl(url, {
+          credentials: "include",
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+        const value: unknown = await response.json();
+        if (!isManagementEnvelope(value)) throw new Error("Invalid management response");
+        return value as ApiResult<T>;
+      })(),
+      interrupted,
+    ]);
   } catch {
     return {
       ok: false,
       error: {
         code: "INTEGRATION_UNAVAILABLE",
-        message: "Management request failed.",
-        retryable: true,
+        message: mutation
+          ? "The change could not be confirmed. Refresh this section to check its status before trying again."
+          : "Management could not be loaded. Refresh this section to try again.",
+        retryable: !mutation,
         nextAction: "resolve",
       },
       correlationId,
     };
+  } finally {
+    clearTimeout(deadline);
+    if (stop) init.signal?.removeEventListener("abort", stop);
   }
+}
+
+function isManagementEnvelope(value: unknown): value is ApiResult<unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (typeof row.ok !== "boolean" || typeof row.correlationId !== "string") return false;
+  if (row.ok) return row.data !== null && typeof row.data === "object";
+  if (!row.error || typeof row.error !== "object" || Array.isArray(row.error)) return false;
+  const error = row.error as Record<string, unknown>;
+  return typeof error.code === "string" && typeof error.message === "string";
 }
 
 export function fetchManagementContext(fetchImpl: typeof fetch = fetch) {
@@ -117,6 +157,21 @@ export function fetchManagementReturnsAttention(fetchImpl: typeof fetch = fetch)
   return jsonResult<ManagementReturnsAttentionView>(fetchImpl, "/api/pos/v1/admin/returns-attention");
 }
 
+export function fetchManagementReturnDetail(returnId: string, fetchImpl: typeof fetch = fetch) {
+  return jsonResult<ManagementReturnDetailView>(fetchImpl, `/api/pos/v1/admin/returns/${encodeURIComponent(returnId)}`);
+}
+
+export function fetchManagementSaleRecovery(transactionId: string, fetchImpl: typeof fetch = fetch) {
+  return jsonResult<ManagementSaleRecoveryView>(fetchImpl, `/api/pos/v1/admin/sales/${encodeURIComponent(transactionId)}/recovery`);
+}
+
+export function repairManagementSale(transactionId: string, fetchImpl: typeof fetch = fetch) {
+  return jsonResult<PreparedSale>(fetchImpl, `/api/pos/v1/admin/sales/${encodeURIComponent(transactionId)}/recovery`, {
+    method: "POST",
+    headers: { [STAFF_CSRF_HEADER]: readCookie(STAFF_CSRF_COOKIE) },
+  });
+}
+
 export function fetchManagementSystemHealth(fetchImpl: typeof fetch = fetch) {
   return jsonResult<ManagementSystemHealthView>(fetchImpl, "/api/pos/v1/admin/system-health");
 }
@@ -125,19 +180,32 @@ export function fetchManagementAudit(fetchImpl: typeof fetch = fetch) {
   return jsonResult<ManagementAuditView>(fetchImpl, "/api/pos/v1/admin/audit");
 }
 
-export function fetchManagementReceiptSettings(locationId: string, fetchImpl: typeof fetch = fetch) {
-  const params = new URLSearchParams({ locationId });
-  return jsonResult<ManagementReceiptSettingsView>(
+export async function fetchManagementReceiptSettings(
+  scope: string | { readonly scope: ReceiptSettingsScope; readonly locationId?: string },
+  fetchImpl: typeof fetch = fetch,
+) {
+  const params = new URLSearchParams(typeof scope === "string" ? { locationId: scope } : {
+    scope: scope.scope,
+    ...(scope.locationId ? { locationId: scope.locationId } : {}),
+  });
+  const result = await jsonResult<ManagementReceiptSettingsView>(
     fetchImpl,
     `/api/pos/v1/admin/receipt-settings?${params.toString()}`,
   );
+  return checkedReceiptScope(result, typeof scope === "string" ? { scope: "location", locationId: scope } : scope);
 }
 
-export function updateManagementReceiptSettings(
-  input: { readonly locationId: string; readonly settings: ReceiptSettings },
+export type ManagementReceiptSettingsChange =
+  | { readonly locationId: string; readonly settings: ReceiptSettings }
+  | { readonly scope: "organization"; readonly settings: ReceiptSettings }
+  | { readonly scope: "location"; readonly locationId: string; readonly overrides: ReceiptSettingsOverride }
+  | { readonly scope: "organization"; readonly action: "apply_shared" };
+
+export async function updateManagementReceiptSettings(
+  input: ManagementReceiptSettingsChange,
   fetchImpl: typeof fetch = fetch,
 ) {
-  return jsonResult<ManagementReceiptSettingsView>(
+  const result = await jsonResult<ManagementReceiptSettingsView>(
     fetchImpl,
     "/api/pos/v1/admin/receipt-settings",
     {
@@ -149,6 +217,23 @@ export function updateManagementReceiptSettings(
       body: JSON.stringify(input),
     },
   );
+  return checkedReceiptScope(result, "scope" in input ? input : { scope: "location", locationId: input.locationId });
+}
+
+function checkedReceiptScope(
+  result: ApiResult<ManagementReceiptSettingsView>,
+  expected: { readonly scope: ReceiptSettingsScope; readonly locationId?: string },
+): ApiResult<ManagementReceiptSettingsView> {
+  if (!result.ok) return result;
+  const view = result.data;
+  if (view && (expected.scope === "organization"
+    ? view.scope === "organization" && view.locationId === ""
+    : view.locationId === expected.locationId && (view.scope === "location" || view.scope === undefined))) return result;
+  return {
+    ok: false,
+    error: { code: "INTEGRATION_UNAVAILABLE", message: "Receipt settings returned another scope. Reload settings before making changes.", retryable: false, nextAction: "resolve" },
+    correlationId: result.correlationId,
+  };
 }
 
 export function updateStaffAssignment(

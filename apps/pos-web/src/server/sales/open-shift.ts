@@ -22,6 +22,9 @@ export async function openShift(input: {
     if (!register || register.status !== "active") {
       return apiFailure("NOT_FOUND", "register is not available", context.correlationId);
     }
+    if (register.locationStatus === "inactive") {
+      return apiFailure("NOT_FOUND", "location is inactive; reactivate it before opening a shift", context.correlationId);
+    }
     if (register.organizationId !== actor.organizationId) {
       return apiFailure("FORBIDDEN", "register is out of staff organization scope", context.correlationId);
     }

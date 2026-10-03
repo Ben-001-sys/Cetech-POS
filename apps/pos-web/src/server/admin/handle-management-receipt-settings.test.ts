@@ -358,12 +358,14 @@ describe("ADMIN-105 receipt settings administration", () => {
 describe("ADMIN-105 receipt settings supabase boundary", () => {
   test("reads with GET only and saves through the audited RPC", async () => {
     const calls: string[] = [];
+    let savedRow: Record<string, unknown> | undefined;
     const fetchImpl: PosRestFetch = async (url, init) => {
       calls.push(`${init.method ?? "GET"} ${url}`);
       if (url.includes("/rpc/pos_admin_set_receipt_settings")) {
         const body = JSON.parse(String(init.body)) as { p_location_id: string };
         expect(body.p_location_id).toBe("loc_a1");
         expect(init.method).toBe("POST");
+        savedRow = { location_id: "loc_a1", shorten_product_names: true, product_name_max_characters: 18, show_sku: false };
         return {
           ok: true,
           status: 200,
@@ -378,7 +380,7 @@ describe("ADMIN-105 receipt settings supabase boundary", () => {
       if (url.includes("pos_locations")) {
         return { ok: true, status: 200, json: async () => [{ id: "loc_a1", name: "Accra Main Store" }] };
       }
-      return { ok: true, status: 200, json: async () => [] };
+      return { ok: true, status: 200, json: async () => savedRow ? [savedRow] : [] };
     };
     const directory = createSupabaseReceiptSettingsAdminStore({
       url: "https://example.test",
@@ -461,4 +463,99 @@ describe("reference receipt presentation administration", () => {
     expect(calls.find(call => call.url.includes("pos_receipt_settings"))?.url).toContain("show_sku,presentation");
     expect(calls.find(call => call.url.includes("/rpc/"))?.body?.p_presentation).toEqual(presentation);
   });
+});
+
+describe("shared receipt defaults and explicit overrides", () => {
+  async function ownerCommon(receiptSettings = store()) {
+    return { correlationId: CORRELATION, now: NOW, ...(await cookieFor("owner_a", [])),
+      assignments: createMemoryAssignmentDirectory([]),
+      controlPlane: createMemoryControlPlaneDirectory([{ organizationId: "org_a", actorId: "owner_a", controlRole: "owner" as const, status: "active" as const }]),
+      receiptSettings, protection: protection() };
+  }
+  test("owner saves shared defaults without changing existing local rows then explicitly applies shared layout in one action", async () => {
+    const receiptSettings = store();
+    receiptSettings.seedSettings("org_a", "loc_a1", { ...SAVED, presentation: { templateVersion: 1, businessName: "Old local name", address: "Accra address", contactPhone: "Local phone", taxRegistrationNumber: "Local tax", footerMessage: "Old footer" } });
+    const common = await ownerCommon(receiptSettings);
+    const shared = { ...DEFAULT_RECEIPT_SETTINGS, presentation: { templateVersion: 1 as const, businessName: "Shared CETECH", footerMessage: "Shared footer", address: "Shared address" } };
+    const saved = await handleSetManagementReceiptSettings({ ...common, scope: "organization", settings: shared });
+    expect(saved.ok).toBe(true);
+    const before = await receiptSettings.read({ organizationId: "org_a", locationId: "loc_a1" });
+    expect(before).toMatchObject({ legacyOverride: true, settings: { presentation: { businessName: "Old local name" } } });
+    const applied = await handleSetManagementReceiptSettings({ ...common, scope: "organization", action: "apply_shared", settings: undefined });
+    expect(applied).toMatchObject({ ok: true, data: { affectedLocationCount: 2 } });
+    const local = await receiptSettings.read({ organizationId: "org_a", locationId: "loc_a1" });
+    expect(local).toMatchObject({ legacyOverride: false, settings: { showSku: false, presentation: { businessName: "Shared CETECH", footerMessage: "Shared footer", address: "Accra address", contactPhone: "Local phone", taxRegistrationNumber: "Local tax" } } });
+    expect(await receiptSettings.read({ organizationId: "org_b", locationId: "loc_b1" })).toMatchObject({ settings: SAVED });
+    expect(receiptSettings.audits.filter(audit => audit.action === "receipt_settings.inherit_layout")).toHaveLength(2);
+    receiptSettings.seedLocation("org_a", "loc_a3", "New branch");
+    expect(await receiptSettings.read({ organizationId: "org_a", locationId: "loc_a3" })).toMatchObject({ settings: shared });
+  });
+  test("sparse false/blank/null overrides survive save and resetting inherits all shared settings", async () => {
+    const common = await ownerCommon();
+    await handleSetManagementReceiptSettings({ ...common, scope: "organization", settings: { ...SAVED, presentation: { templateVersion: 1, logoDataUrl: "data:image/png;base64,iVBORw0KGgo=", address: "Shared", showCashier: true } } });
+    const saved = await handleSetManagementReceiptSettings({ ...common, scope: "location", locationId: "loc_a1", settings: undefined,
+      overrides: { showSku: false, presentation: { logoDataUrl: null, address: "", showCashier: false } } });
+    expect(saved).toMatchObject({ ok: true, data: { settings: { showSku: false, presentation: { address: "", showCashier: false } } } });
+    if (!saved.ok) throw new Error("expected saved overrides");
+    expect(saved.data.settings.presentation).not.toHaveProperty("logoDataUrl");
+    const reset = await handleSetManagementReceiptSettings({ ...common, locationId: "loc_a1", settings: undefined, overrides: {} });
+    expect(reset).toMatchObject({ ok: true, data: { settings: { showSku: true, presentation: { address: "Shared", showCashier: true } } } });
+    const wrong = await handleSetManagementReceiptSettings({ ...common, locationId: "loc_b1", settings: undefined, overrides: {} });
+    expect(wrong).toMatchObject({ ok: false, error: { code: "VALIDATION_ERROR" } });
+  });
+  test("manager cannot read organization defaults, change sparse overrides or apply shared settings", async () => {
+    const common = { correlationId: CORRELATION, now: NOW, ...(await cookieFor("manager_a")), receiptSettings: store(), protection: protection(),
+      controlPlane: createMemoryControlPlaneDirectory([]), assignments: createMemoryAssignmentDirectory([{ actorId: "manager_a", organizationId: "org_a", locationRoles: [{ locationId: "loc_a1", role: "manager" }], registerIds: ["reg_a"] }]) };
+    expect(await handleGetManagementReceiptSettings({ ...common, scope: "organization" })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await handleSetManagementReceiptSettings({ ...common, locationId: "loc_a1", settings: undefined, overrides: {} })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await handleSetManagementReceiptSettings({ ...common, scope: "organization", action: "apply_shared", settings: undefined })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(common.receiptSettings.audits).toHaveLength(0);
+  });
+  test("bulk audit failure leaves all settings unchanged", async () => {
+    const receiptSettings = createMemoryReceiptSettingsAdminStore({ auditFails: true });
+    receiptSettings.seedLocation("org_a", "loc_a1", "Accra");
+    receiptSettings.seedSettings("org_a", "loc_a1", SAVED);
+    const common = await ownerCommon(receiptSettings);
+    expect(await handleSetManagementReceiptSettings({ ...common, scope: "organization", action: "apply_shared", settings: undefined })).toMatchObject({ ok: false, error: { code: "INTEGRATION_UNAVAILABLE" } });
+    expect(await receiptSettings.read({ organizationId: "org_a", locationId: "loc_a1" })).toMatchObject({ settings: SAVED, legacyOverride: true });
+    expect(receiptSettings.audits).toHaveLength(0);
+  });
+});
+
+test("legacy SKU-only client preserves sparse presentation and Supabase adapter returns effective settings after the save", async () => {
+  const shared = { location_id: null, shorten_product_names: false, product_name_max_characters: 40, show_sku: true, presentation: { templateVersion: 1, businessName: "Shared", logoDataUrl: "data:image/png;base64,iVBORw0KGgo=" } };
+  const local = { location_id: "loc_a1", shorten_product_names: true, product_name_max_characters: 18, show_sku: true,
+    presentation: { templateVersion: 1, businessName: "Old stale branding" }, settings_override: { presentation: { address: "New local address" } } as Record<string, unknown> };
+  const directory = createSupabaseReceiptSettingsAdminStore({ url: "https://example.test", serviceRoleKey: "synthetic", fetchImpl: async (url, init) => {
+    if (url.includes("/rpc/pos_admin_set_receipt_settings")) {
+      local.settings_override = { ...local.settings_override, shortenProductNames: false, productNameMaxCharacters: 24, showSku: false };
+      return { ok: true, status: 200, json: async () => ({ locationId: "loc_a1", shortenProductNames: false, productNameMaxCharacters: 24, showSku: false, presentation: local.presentation }) };
+    }
+    if (url.includes("pos_locations")) return { ok: true, status: 200, json: async () => [{ id: "loc_a1", name: "Accra" }] };
+    expect(init.method).toBe("GET");
+    return { ok: true, status: 200, json: async () => [shared, local] };
+  } });
+  const saved = await directory.set({ organizationId: "org_a", locationId: "loc_a1", actorId: "owner_a", correlationId: CORRELATION,
+    settings: { shortenProductNames: false, productNameMaxCharacters: 24, showSku: false } });
+  expect(saved).toMatchObject({ legacyOverride: false, settings: { showSku: false, presentation: { businessName: "Shared", address: "New local address", logoDataUrl: "data:image/png;base64,iVBORw0KGgo=" } } });
+  const memory = store();
+  await memory.set({ organizationId: "org_a", scope: "organization", actorId: "owner_a", correlationId: CORRELATION, settings: { ...DEFAULT_RECEIPT_SETTINGS, presentation: shared.presentation as ReceiptSettings["presentation"] } });
+  await memory.set({ organizationId: "org_a", locationId: "loc_a1", actorId: "owner_a", correlationId: CORRELATION, overrides: { presentation: { address: "New local address" } } });
+  expect(await memory.set({ organizationId: "org_a", locationId: "loc_a1", actorId: "owner_a", correlationId: CORRELATION, settings: SAVED })).toMatchObject({ legacyOverride: false, settings: { presentation: { businessName: "Shared", address: "New local address", logoDataUrl: "data:image/png;base64,iVBORw0KGgo=" } } });
+});
+
+test("legacy SKU-only save of a new shared location reports sparse inheritance even without presentation", async () => {
+  let local: Record<string, unknown> | undefined;
+  const shared = { location_id: null, shorten_product_names: false, product_name_max_characters: 40, show_sku: true, presentation: null };
+  const directory = createSupabaseReceiptSettingsAdminStore({ url: "https://example.test", serviceRoleKey: "synthetic", fetchImpl: async url => {
+    if (url.includes("/rpc/")) {
+      local = { location_id: "loc_a1", shorten_product_names: false, product_name_max_characters: 24, show_sku: false, presentation: null,
+        settings_override: { shortenProductNames: false, productNameMaxCharacters: 24, showSku: false } };
+      return { ok: true, status: 200, json: async () => ({ locationId: "loc_a1", shortenProductNames: false, productNameMaxCharacters: 24, showSku: false }) };
+    }
+    if (url.includes("pos_locations")) return { ok: true, status: 200, json: async () => [{ id: "loc_a1", name: "Accra" }] };
+    return { ok: true, status: 200, json: async () => local ? [shared, local] : [shared] };
+  } });
+  expect(await directory.set({ organizationId: "org_a", locationId: "loc_a1", actorId: "owner_a", correlationId: CORRELATION,
+    settings: { shortenProductNames: false, productNameMaxCharacters: 24, showSku: false } })).toMatchObject({ legacyOverride: false, overrides: { shortenProductNames: false, productNameMaxCharacters: 24, showSku: false } });
 });

@@ -16,7 +16,7 @@ export function AuditPanel({
   readonly correlationId?: string;
 }) {
   if (loading) {
-    return <ManagementLoading message="Loading audit history…" />;
+    return <ManagementLoading variant="audit" message="Loading audit history…" />;
   }
   if (errorMessage || !view) {
     return (

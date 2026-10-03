@@ -16,6 +16,19 @@ const ACTOR = {
 };
 
 describe("STG-06 open-shift pre-send idempotency", () => {
+  test("an inactive parent location rejects new shifts before idempotency or cash effects", async () => {
+    const store = createInMemoryCheckoutStore();
+    await store.seedRegister({ id: "reg_a1", name: "Register 1", locationId: "loc_a1", currency: "GHS", status: "active", organizationId: "org_a", locationStatus: "inactive" });
+    await store.seedDevice({ id: DEVICE_ID, organizationId: "org_a", locationId: "loc_a1", status: "active" });
+    const result = await openShift({ store, actor: ACTOR,
+      request: { registerId: "reg_a1", deviceId: DEVICE_ID, openingFloat: { minor: 0, currency: "GHS" } },
+      context: { idempotencyKey: KEY, correlationId: CORRELATION }, now: NOW,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("location is inactive");
+    expect(await store.peekIdempotency("org_a", "shift.open", KEY)).toBeUndefined();
+    expect(await store.getActiveShift("reg_a1")).toBeUndefined();
+  });
   test("device rejection before claim does not leave a pending idempotency row", async () => {
     const store = createInMemoryCheckoutStore();
     await store.seedRegister({
