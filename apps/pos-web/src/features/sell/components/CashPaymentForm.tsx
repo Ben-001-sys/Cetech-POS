@@ -48,8 +48,11 @@ export function CashPaymentForm({
 
   return (
     <form className="cash-payment stack" onSubmit={handleSubmit}>
-      <div className="big-money cash-total" data-checkout-due="prepared">
-        {formatMoneyDisplay(prepared.total)}
+      <div className="cash-amount-due">
+        <span className="muted">Amount due</span>
+        <div className="big-money cash-total" data-checkout-due="prepared">
+          {formatMoneyDisplay(prepared.total)}
+        </div>
       </div>
       <div className="field">
         <label htmlFor="cash-received">Cash received</label>

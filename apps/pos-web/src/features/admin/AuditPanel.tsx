@@ -2,6 +2,7 @@
 
 import type { ManagementAuditItem, ManagementAuditView } from "../../server/admin/management-audit";
 import { formatOperationalDateTime } from "../../ui/cashier-language";
+import { ManagementLoading } from "./ManagementLoading";
 
 export function AuditPanel({
   view,
@@ -15,7 +16,7 @@ export function AuditPanel({
   readonly correlationId?: string;
 }) {
   if (loading) {
-    return <section className="card card-pad" aria-live="polite"><p>Loading audit history…</p></section>;
+    return <ManagementLoading message="Loading audit history…" />;
   }
   if (errorMessage || !view) {
     return (

@@ -2,6 +2,8 @@
 
 **Updated for this testing round:** 2 October 2026 — price-check instructions revised.
 
+**UI refinement candidate — 3 October 2026:** Additional guidance marked **Candidate UI** describes `ws1/ui-refinement-2026-10-03`. Use it only when the coordinator confirms that candidate in the Test Brief. This note does not mean the existing POS link has been updated.
+
 **Read and understand the [current Test Brief](https://github.com/WB-DevWorld/cetech-pwa-pos/tree/ws3/quote-latency-2026-10-02/docs/staff/testing-2026-10-02/brief) first.**
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
@@ -107,6 +109,8 @@ Support access is for diagnostics and audit where authorized. Support access doe
 3. Enter your **password**.
 4. Select **Sign in**.
 
+**Candidate UI:** Select **Show** to check the password you typed, then **Hide** to conceal it again. This changes its display only; it does not clear or change the password.
+
 If your temporary password must be changed, the POS will show **Choose a new password** before opening the rest of the POS.
 
 If you see:
@@ -137,6 +141,10 @@ The normal POS navigation contains the main work areas:
 - **Settings** — device/register information, appearance, and System status.
 
 Management functions are separate and should only appear to people who are authorized.
+
+**Candidate UI:** On a phone, work areas appear along the bottom; swipe that navigation sideways when needed. The working register stays near the top. When work needs review, the mobile **Needs attention** shortcut keeps its count visible. Routine confirmations appear below the header rather than covering the selling controls.
+
+**Candidate UI:** Grey placeholder rows/cards mean Orders, Customers, or a shift report is loading. Wait for actual details before using them. Price-check timing, failures, and retry instructions still follow **10. Price status**; placeholder feedback is not proof of faster pricing.
 
 ---
 
@@ -180,6 +188,8 @@ For a keyboard-style barcode scanner:
 3. wait for the product to appear in the cart or for the POS to ask you to choose a variation.
 
 Do not manually shorten or rename product data because a product name is long. Compact POS screens may visually show only part of a long name, but the underlying product name remains complete.
+
+**Candidate UI:** Use **Grid** or **List** above the product results. **Compact** switches between a tighter product display and the comfortable display. These are preferences for this browser/device; they do not change products, prices, or receipts. **List** wraps full product names; keyboard focus expands a product name in **Grid**. Full names wrap in the cart.
 
 ---
 
@@ -369,6 +379,8 @@ Open **Orders** to:
 
 Order dates should be shown in understandable local operational format, not raw computer timestamps.
 
+**Candidate UI:** Full item names wrap in order details. Scroll the item details when needed; **Reprint** and **Return items** stay at the bottom when permitted. With a keyboard, Tab stays within the open dialog; Escape closes it and returns focus to the order you opened.
+
 ---
 
 ## 17. Customers
@@ -386,6 +398,8 @@ If customer search is temporarily unavailable, Walk-in remains the safe fallback
 ---
 
 ## 18. Returns
+
+**Candidate UI:** In Returns, enter an order, customer, or receipt in the search field and select **Search sales** (or press Enter). Select the matching sale. Full item names wrap in the return form. An unresolved return still locks other sales until that same return is checked.
 
 A normal return flow can ask you to:
 

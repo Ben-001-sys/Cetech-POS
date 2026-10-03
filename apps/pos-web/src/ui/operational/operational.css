@@ -1,14 +1,17 @@
 .operational-surface { min-width: 0; }
 .operational-banner { margin-bottom: var(--space-3); flex-wrap: wrap; align-items: center; }
-.operational-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
+.operational-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 .operational-metric { display: grid; gap: 5px; padding: var(--space-4); min-height: 100px; align-content: center; }
-.operational-metric strong { font-size: 25px; }
+.operational-metric strong { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .operational-metric .operational-build { font-size: var(--font-md); overflow-wrap: anywhere; }
 .operational-state { display: flex; min-height: 120px; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
 .operational-state p { margin: 6px 0 0; color: var(--color-text-muted); }
+.operational-loading { display: grid; justify-content: stretch; text-align: left; gap: 16px; }
+.operational-loading > strong { font-size: var(--font-sm); color: var(--color-text-muted); font-weight: 500; }
 .operational-spinner { width: 24px; height: 24px; border: 3px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: operational-spin .8s linear infinite; flex: 0 0 auto; }
 .operational-health-list { display: grid; gap: var(--space-2); }
-.operational-health-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); border: 1px solid var(--color-border); border-radius: 10px; padding: 11px 12px; background: var(--color-surface); }
+.operational-health-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px; background: var(--color-surface); }
+.operational-health-row strong { font-weight: 600; }
 .operational-health-row > div { display: grid; gap: 4px; min-width: 0; }
 .operational-health-row span:not(.workspace-badge), .operational-health-row small { color: var(--color-text-muted); font-size: var(--font-sm); }
 .operational-version { margin-top: var(--space-3); }
@@ -23,12 +26,14 @@
 .operational-attention-item.severity-critical { border-left-color: var(--color-danger); }
 .operational-attention-item.severity-medium { border-left-color: var(--color-warning); }
 .operational-attention-item.severity-low { border-left-color: var(--color-info); }
-.operational-attention-item p { margin: 0; }
+.operational-attention-item p { margin: 0; line-height: 1.55; }
+.operational-attention-head strong { font-weight: 650; }
+.operational-attention-head > div { min-width: 0; overflow-wrap: anywhere; }
 .operational-attention-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-start; }
 .operational-attention-head > div { display: grid; gap: 4px; }
 .operational-attention-head > div > span { color: var(--color-text-muted); font-size: var(--font-sm); }
 .operational-dialog-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 18px; background: rgba(13,20,32,.48); }
-.operational-dialog { width: min(620px, 100%); max-height: min(88vh, 850px); overflow: auto; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: var(--shadow-md); }
+.operational-dialog { width: min(560px, 100%); max-height: min(88dvh, 850px); overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-md); }
 .operational-dialog-head { padding: var(--space-4) 18px; border-bottom: 1px solid var(--color-border); }
 .operational-dialog-head h2 { margin: 3px 0 0; }
 .operational-dialog-body { padding: 18px; }
@@ -37,6 +42,7 @@
 .operational-detail-list > div { display: flex; justify-content: space-between; gap: var(--space-3); border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-2); }
 .operational-detail-list dt { color: var(--color-text-muted); }
 .operational-detail-list dd { margin: 0; font-weight: 800; text-align: right; }
+.operational-detail-list > div > * { min-width: 0; overflow-wrap: anywhere; }
 .operational-panel { display: grid; gap: var(--space-3); }
 .operational-panel > p { margin: 0; color: var(--color-text-muted); }
 .operational-recovery-steps { margin: 0; padding-left: 22px; display: grid; gap: 7px; }
@@ -48,6 +54,6 @@
   .operational-metrics, .operational-version-grid { grid-template-columns: 1fr; }
   .operational-health-row, .operational-attention-head { align-items: flex-start; flex-direction: column; }
   .operational-dialog-backdrop { place-items: end center; padding: 0; }
-  .operational-dialog { width: 100%; max-height: 92vh; border-radius: 18px 18px 0 0; border-left: 0; border-right: 0; border-bottom: 0; }
+  .operational-dialog { width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; border-left: 0; border-right: 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
   .operational-dialog-actions .btn { flex: 1 1 150px; }
 }

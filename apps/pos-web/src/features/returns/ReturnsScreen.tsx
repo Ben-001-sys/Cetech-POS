@@ -122,17 +122,23 @@ export function ReturnsScreen({
         </div>
       </div>
       <form className="card card-pad returns-search" onSubmit={handleSearch}>
-        <label className="field" htmlFor="return-sale-query">
-          <span className="sr-only">Find order, customer or receipt</span>
-          <input
-            id="return-sale-query"
-            className="input"
-            value={query}
-            disabled={lookupDisabled}
-            placeholder="Find order, customer or receipt…"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <div className="returns-search-controls">
+          <label className="field" htmlFor="return-sale-query">
+            <span className="sr-only">Find order, customer or receipt</span>
+            <input
+              id="return-sale-query"
+              className="input"
+              type="search"
+              value={query}
+              disabled={lookupDisabled}
+              placeholder="Find order, customer or receipt…"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <button className="btn" type="submit" disabled={lookupDisabled}>
+            {searching ? "Searching…" : "Search sales"}
+          </button>
+        </div>
         {!lookup ? (
           <div className="banner warning" role="status">
             Original sale lookup is unavailable. You can still review a return after a sale is selected.
@@ -148,8 +154,27 @@ export function ReturnsScreen({
             {lookupError}
           </div>
         ) : null}
-        {searching ? <p className="muted" role="status">Looking up original sales…</p> : null}
+        {searching ? <p className="muted" role="status" aria-live="polite">Looking up original sales…</p> : null}
       </form>
+      {searching && !locked && matches.length === 0 ? (
+        <div className="returns-card-grid workspace-skeleton" aria-hidden="true">
+          {[0, 1].map((card) => (
+            <div className="card card-pad return-skeleton-card" key={card}>
+              <span className="skeleton-line" />
+              <span className="skeleton-line" />
+              <span className="skeleton-block" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {!searching && !locked && !session.saleId && !lookupError && localMatches !== null && matches.length === 0 ? (
+        <div className="card card-pad workspace-state" role="status">
+          <div>
+            <strong>No original sales available.</strong>
+            <p>Search by order, customer or receipt to find the sale you want to return.</p>
+          </div>
+        </div>
+      ) : null}
       {session.saleId ? (
         <div
           ref={selectedFlowRef}
@@ -180,7 +205,7 @@ export function ReturnsScreen({
               >
                 <div className="returns-sale-head">
                   <strong>{sale.orderReference}</strong>
-                  {sale.total ? <strong>{formatMoneyLabel(sale.total)}</strong> : null}
+                  {sale.total ? <strong className="returns-sale-total">{formatMoneyLabel(sale.total)}</strong> : null}
                 </div>
                 <p className="workspace-subline">
                   {[sale.customerLabel, sale.createdAt ? formatOperationalDateTime(sale.createdAt) : undefined]

@@ -2,6 +2,8 @@
 
 **Updated for this testing round:** 2 October 2026 — price-check timing and retry checks added.
 
+**UI refinement candidate — 3 October 2026:** Additional guidance marked **Candidate UI** describes `ws1/ui-refinement-2026-10-03`. Use it only when the coordinator confirms that candidate in the Test Brief. This note does not mean the existing POS link has been updated.
+
 **Read and understand the [current Test Brief](TEST-BRIEF-2026-10-02.md) first.**
 
 **[Open the POS for this round](https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app)**
@@ -352,6 +354,8 @@ Owner/Admin test.
 
 **Do:** Sign in with an authorized cashier account.
 
+**Candidate UI check:** Before signing in, switch **Show** then **Hide** and confirm that the password is retained. Do not capture the revealed password in a screenshot.
+
 **Expected:**
 - sign-in succeeds;
 - normal POS appears;
@@ -567,6 +571,8 @@ Owner/Admin test.
 
 **Do:** Search for a known staging product.
 
+**Candidate UI check:** Switch **Grid**, **List**, and **Compact**. Check that products/prices and the current cart stay the same, and that your chosen view remains after a normal refresh. These are browser/device preferences.
+
 **Expected:**
 - correct product appears quickly;
 - name/price presentation is readable.
@@ -589,6 +595,8 @@ Owner/Admin test.
 - compact screen layout remains usable;
 - name is visually limited where appropriate;
 - full product identity is not changed in the data/search behavior.
+
+**Candidate UI check:** **List** wraps the full product name; keyboard focus expands a name in **Grid**. The cart also wraps full names. Verify these without changing or shortening the product data.
 
 ### Your result
 
@@ -953,6 +961,8 @@ Preview a business name/address/footer change before saving. Upload a small vali
 - expected sale is found;
 - displayed date/time is understandable.
 
+**Candidate UI check:** If loading is visible, placeholder rows give way to actual results or an honest empty/error message. Search/status controls remain reachable, and the page does not need sideways scrolling on a phone. Record when loading was too quick to observe.
+
 ### Your result
 
 **Result:** PASS / FAIL / PARTLY WORKED / COULD NOT TEST\
@@ -970,6 +980,8 @@ Preview a business name/address/footer change before saving. Upload a small vali
 - Reprint and Return items appear when allowed;
 - technical reference information is secondary/collapsible.
 
+**Candidate UI check:** Full item names wrap. In a long order, scroll the details while permitted actions remain visible at the bottom. With a keyboard, check Tab/Shift+Tab stays in the dialog, Escape closes it, and focus returns to the order button. Opening/closing the dialog must not start a return or print a receipt.
+
 ### Your result
 
 **Result:** PASS / FAIL / PARTLY WORKED / COULD NOT TEST\
@@ -986,6 +998,8 @@ Preview a business name/address/footer change before saving. Upload a small vali
 
 
 ## T80 — Normal return
+
+**Candidate UI check:** You may find the same eligible sale in Returns by entering an order/customer/receipt and choosing **Search sales** (or pressing Enter). Full item names should wrap. An unresolved return must still hide/lock other sales; continue that return instead of starting a new one.
 
 **Do:**
 1. start Return items from an eligible order;
@@ -1343,6 +1357,8 @@ The POS must not pretend those actions succeeded.
 
 Test selling, modal dialogs, Orders, Returns, Register, and Management where authorized.
 
+**Candidate UI check:** Confirm the compact navigation, clear loading placeholders, and routine messages leave search/cart/payment controls usable. Check long customer and item names without changing the stored data. Record the selected Grid/List/Compact view.
+
 **Expected:** no hidden/overlapping critical controls.
 
 ### Your result
@@ -1359,6 +1375,8 @@ Test selling, modal dialogs, Orders, Returns, Register, and Management where aut
 
 **Expected:** touch controls are usable; important actions remain visible.
 
+**Candidate UI check:** Try both product views and density choices. Check order-detail actions remain reachable while details scroll, and search/filter/form controls do not overlap or force the whole page sideways.
+
 ### Your result
 
 **Result:** PASS / FAIL / PARTLY WORKED / COULD NOT TEST\
@@ -1372,6 +1390,8 @@ Test selling, modal dialogs, Orders, Returns, Register, and Management where aut
 ## T142 — Phone
 
 **Expected:** layout remains usable; navigation/actions do not require desktop width.
+
+**Candidate UI check:** Reach each labelled work area in the bottom navigation (swipe the navigation when needed). Confirm the working register is readable, cart/Pay controls remain reachable, and Orders/Customers/Returns/Register do not force the whole page sideways. Also check with the on-screen keyboard open. If safe existing work needs review, confirm the **Needs attention** shortcut and count remain visible without scrolling the navigation; do not create uncertain work just to force this condition.
 
 ### Your result
 

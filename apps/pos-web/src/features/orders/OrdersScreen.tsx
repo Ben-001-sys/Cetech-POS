@@ -131,7 +131,7 @@ export function OrdersScreen({
           <p>Review recent POS sales, reprint receipts, and start returns.</p>
         </div>
         {onNewSale ? (
-          <button className="btn" type="button" onClick={onNewSale}>
+          <button className="btn primary" type="button" onClick={onNewSale}>
             New sale
           </button>
         ) : null}
@@ -197,11 +197,19 @@ export function OrdersScreen({
       </div>
 
       {state === "loading" ? (
-        <div className="card card-pad workspace-state" role="status" aria-live="polite">
-          <div className="workspace-spinner" aria-hidden="true" />
+        <div className="card card-pad workspace-skeleton orders-loading" role="status" aria-live="polite">
           <div>
             <strong>Loading orders…</strong>
             <p>Existing sales are not being changed.</p>
+          </div>
+          <div className="orders-skeleton-rows" aria-hidden="true">
+            {[0, 1, 2].map((row) => (
+              <div className="orders-skeleton-row" key={row}>
+                <span className="skeleton-line" />
+                <span className="skeleton-line" />
+                <span className="skeleton-block" />
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
@@ -217,7 +225,7 @@ export function OrdersScreen({
 
       {state !== "loading" && state !== "error" && filtered.length > 0 ? (
         <div className="workspace-table-wrap">
-          <table className="workspace-table">
+          <table className="workspace-table orders-table" aria-label="Recent POS orders">
             <thead>
               <tr>
                 <th scope="col">Order</th>
@@ -232,28 +240,34 @@ export function OrdersScreen({
               {filtered.map((order) => (
                 <tr key={order.id}>
                   <td data-label="Order">
-                    {onSelectOrder ? (
-                      <button className="workspace-link" type="button" onClick={() => onSelectOrder(order.id)}>
-                        {order.orderReference}
-                      </button>
-                    ) : (
-                      <strong>{order.orderReference}</strong>
-                    )}
-                    {order.receiptNumber ? <span className="workspace-subline">{order.receiptNumber}</span> : null}
+                    <div className="order-cell-content">
+                      {onSelectOrder ? (
+                        <button className="workspace-link" type="button" onClick={() => onSelectOrder(order.id)}>
+                          {order.orderReference}
+                        </button>
+                      ) : (
+                        <strong>{order.orderReference}</strong>
+                      )}
+                      {order.receiptNumber ? <span className="workspace-subline">{order.receiptNumber}</span> : null}
+                    </div>
                   </td>
                   <td data-label="Customer">
-                    {order.customerLabel}
-                    {order.customerCompany ? <span className="workspace-subline">{order.customerCompany}</span> : null}
-                    {order.customerKind === "b2b" ? <span className="workspace-badge info">Wholesale</span> : null}
+                    <div className="order-cell-content">
+                      <span className="order-customer-name">{order.customerLabel}</span>
+                      {order.customerCompany ? <span className="workspace-subline">{order.customerCompany}</span> : null}
+                      {order.customerKind === "b2b" ? <span className="workspace-badge info">Wholesale</span> : null}
+                    </div>
                   </td>
-                  <td data-label="Date">{formatDateTime(order.createdAt)}</td>
+                  <td data-label="Date"><time dateTime={order.createdAt}>{formatDateTime(order.createdAt)}</time></td>
                   <td data-label="Payment">
-                    {order.paymentLabel}
-                    {order.paymentStatus ? (
-                      <span className={`workspace-badge ${badgeTone(order.paymentStatus)}`}>{paymentStatusLabel(order.paymentStatus)}</span>
-                    ) : null}
+                    <div className="order-cell-content">
+                      {order.paymentLabel}
+                      {order.paymentStatus ? (
+                        <span className={`workspace-badge ${badgeTone(order.paymentStatus)}`}>{paymentStatusLabel(order.paymentStatus)}</span>
+                      ) : null}
+                    </div>
                   </td>
-                  <td data-label="Total"><strong>{formatMoney(order.total)}</strong></td>
+                  <td data-label="Total" className="order-money"><strong>{formatMoney(order.total)}</strong></td>
                   <td data-label="Status">
                     <span className={`workspace-badge ${badgeTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
                   </td>
@@ -271,9 +285,12 @@ export function OrderDetailDialog({ open, order, canReturn = true, onClose, onRe
   const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (open) {
-      dialogRef.current?.focus();
-    }
+    if (!open) return;
+    const previousFocus = document.activeElement;
+    dialogRef.current?.focus();
+    return () => {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
   }, [open]);
 
   if (!open || !order) return null;
@@ -291,6 +308,20 @@ export function OrderDetailDialog({ open, order, canReturn = true, onClose, onRe
           if (event.key === "Escape") {
             event.preventDefault();
             onClose();
+          }
+          if (event.key === "Tab") {
+            const controls = dialogRef.current?.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), summary, a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            );
+            const first = controls?.[0];
+            const last = controls?.[controls.length - 1];
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+              event.preventDefault();
+              last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first?.focus();
+            }
           }
         }}
       >
@@ -328,7 +359,7 @@ export function OrderDetailDialog({ open, order, canReturn = true, onClose, onRe
           <div className="order-detail-lines" aria-label="Order lines">
             {order.lines.map((line) => (
               <div className="order-detail-line" key={line.id}>
-                <span className="compact-product-name">{line.quantity} × {line.name}{line.variationLabel ? <small>{line.variationLabel}</small> : null}</span>
+                <span className="order-line-name">{line.quantity} × {line.name}{line.variationLabel ? <small>{line.variationLabel}</small> : null}</span>
                 <strong>{formatMoney(line.total)}</strong>
               </div>
             ))}

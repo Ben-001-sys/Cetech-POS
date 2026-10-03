@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test } from "vitest";
+import type { ReactElement } from "react";
+import { describe, expect, test, vi } from "vitest";
 import { AppShell } from "./AppShell";
+import { TopBar, type TopBarProps } from "./TopBar";
 import { PRIMARY_NAV_ITEMS, POS_ROUTE_HREFS } from "./routes";
 
 function renderShell(activeRoute: "sell" | "settings" = "sell") {
@@ -58,5 +60,18 @@ describe("AppShell", () => {
     const html = renderShell();
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("Ready");
+  });
+
+  test("uses the existing attention navigation for the compact header action", () => {
+    const onNavigate = vi.fn();
+    const tree = AppShell({ activeRoute: "sell", attentionCount: 2, onNavigate, children: <p>Workspace</p> });
+    const main = tree.props.children.find((element: ReactElement<{ className?: string }>) => element.props.className === "app-main");
+    const header = main.props.children.find((element: ReactElement<TopBarProps> | null) => element?.type === TopBar);
+    expect(header.props.attentionCount).toBe(2);
+    header.props.onOpenAttention();
+    expect(onNavigate).toHaveBeenCalledExactlyOnceWith("attention");
+    expect(renderToStaticMarkup(tree)).toContain('aria-label="Needs attention 2"');
+    const empty = renderToStaticMarkup(<AppShell activeRoute="sell" attentionCount={0}><p>Workspace</p></AppShell>);
+    expect(empty).not.toContain("mobile-attention");
   });
 });

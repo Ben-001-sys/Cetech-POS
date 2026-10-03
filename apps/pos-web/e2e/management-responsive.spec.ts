@@ -139,7 +139,7 @@ test.describe("ADMIN-105 Management responsiveness and operator language", () =>
     await installManagementMocks(page);
     await page.goto("/management");
     await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: "Staff & access" }).click();
+    await page.locator(".management-nav").getByRole("button", { name: "Staff & access", exact: true }).click();
 
     await expect(page.getByRole("heading", { name: "Staff & access" })).toBeVisible();
     await expect(page.getByText("Account active")).toBeVisible();
@@ -168,7 +168,7 @@ test.describe("ADMIN-105 Management responsiveness and operator language", () =>
     expect(firstBox).toBeTruthy();
     expect(firstBox!.height).toBeGreaterThanOrEqual(44);
 
-    await page.getByRole("button", { name: "Operational rules" }).click();
+    await nav.getByRole("button", { name: "Operational rules", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Shift closing" })).toBeVisible();
     await expect(page.getByText("Cash difference requires manager review")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save operational rules" })).toBeVisible();
@@ -202,7 +202,7 @@ test.describe("ADMIN-105 Management responsiveness and operator language", () =>
     expect(firstBox).toBeTruthy();
     expect(firstBox!.height).toBeGreaterThanOrEqual(44);
 
-    await page.getByRole("button", { name: "Staff & access" }).click();
+    await page.locator(".management-nav").getByRole("button", { name: "Staff & access", exact: true }).click();
     await expect(page.getByText("Kwame Asante — Main Counter Cashier")).toBeVisible();
     await expect(page.getByText("Staff ID cashier_a")).toBeHidden();
     await expect(page.getByText("Location and register assignments")).toBeVisible();

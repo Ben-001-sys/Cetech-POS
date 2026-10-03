@@ -63,7 +63,10 @@ export function SettingsScreen({
         </div>
       ) : null}
       {state === "loading" ? (
-        <div className="card card-pad workspace-state" role="status" aria-live="polite"><div className="workspace-spinner" aria-hidden="true" /><div><strong>Loading settings…</strong><p>Saved device settings are not being reset.</p></div></div>
+        <div className="card card-pad workspace-state settings-loading" role="status" aria-live="polite">
+          <div className="workspace-skeleton" aria-hidden="true"><span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" /></div>
+          <div><strong>Loading settings…</strong><p>Saved device settings are not being reset.</p></div>
+        </div>
       ) : null}
       {state === "empty" ? (
         <div className="card card-pad workspace-state" role="status"><div><strong>Settings are not available.</strong><p>Register settings will appear here when this device is assigned.</p></div></div>

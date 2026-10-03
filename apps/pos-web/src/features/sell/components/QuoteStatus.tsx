@@ -14,6 +14,7 @@ export function QuoteStatus({
     <div className={`quote-status ${view.tone}`} data-quote-status={quote.status} data-quote-authority="supplied" role="status" aria-live="polite">
       <div className="quote-status-message">
         {view.tone === "confirmed" ? <span aria-hidden="true">✓</span> : null}
+        {quote.status === "quoting" ? <span className="quote-spinner" aria-hidden="true" /> : null}
         <span>{view.message}</span>
       </div>
       {view.comparison ? (

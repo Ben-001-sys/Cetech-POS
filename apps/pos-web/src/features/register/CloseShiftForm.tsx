@@ -37,7 +37,7 @@ export function CloseShiftForm({
         <strong>Count drawer cash</strong>
         <span>Enter what you counted. Expected cash will be shown after you finish.</span>
       </div>
-      <form className="stack" onSubmit={handleSubmit}>
+      <form className="stack" onSubmit={handleSubmit} aria-busy={submitting}>
         <div className="field">
           <label htmlFor="closing-count">{currencyLabel}</label>
           <input
@@ -51,14 +51,15 @@ export function CloseShiftForm({
               setLocalError(null);
               setCounted(event.target.value);
             }}
-            aria-describedby="closing-count-help"
+            aria-describedby={localError ? "closing-count-help closing-count-error" : "closing-count-help"}
+            aria-invalid={Boolean(localError)}
           />
           <div className="muted" id="closing-count-help">
             {"Enter what you counted. We'll compare your count with the expected cash after you end the shift."}
           </div>
         </div>
         {(localError || errorMessage) ? (
-          <div className="banner danger" role="alert">
+          <div className="banner danger" role="alert" id="closing-count-error">
             {localError || errorMessage}
           </div>
         ) : null}

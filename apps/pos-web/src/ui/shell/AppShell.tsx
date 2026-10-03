@@ -44,11 +44,11 @@ export function AppShell({
         />
       </aside>
       <div className="app-main">
-        <TopBar {...topBar} />
-        <main className="content" id="main-content">
+        <TopBar {...topBar} attentionCount={attentionCount} onOpenAttention={() => onNavigate?.("attention")} />
+        {toast ? <AppToast title={toast.title} detail={toast.detail} /> : null}
+        <main className="content" id="main-content" tabIndex={-1}>
           {children}
         </main>
-        {toast ? <AppToast title={toast.title} detail={toast.detail} /> : null}
       </div>
     </div>
   );

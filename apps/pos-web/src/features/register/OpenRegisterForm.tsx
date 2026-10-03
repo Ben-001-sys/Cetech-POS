@@ -95,7 +95,7 @@ export function OpenRegisterForm({
   }
 
   return (
-    <div>
+    <div className="register-open-workspace">
       <div className="page-head">
         <div>
           <h1>Register</h1>
@@ -103,10 +103,10 @@ export function OpenRegisterForm({
         </div>
       </div>
       <section className="card card-pad register-open" aria-labelledby="open-register-title">
-        <h2 id="open-register-title" className="sr-only">
+        <h2 id="open-register-title">
           Open register
         </h2>
-        <form className="stack" onSubmit={handleSubmit}>
+        <form className="stack" onSubmit={handleSubmit} aria-busy={submitting}>
           <div className="field">
             <label htmlFor="register-select">Register</label>
             <select
@@ -161,7 +161,8 @@ export function OpenRegisterForm({
               inputMode="decimal"
               value={floatValue}
               onChange={(event) => handleFloatChange(event.target.value)}
-              aria-describedby="opening-help"
+              aria-describedby={localError ? "opening-help opening-error" : "opening-help"}
+              aria-invalid={Boolean(localError)}
               disabled={submitting}
             />
             <div className="muted" id="opening-help">
@@ -175,7 +176,7 @@ export function OpenRegisterForm({
             </div>
           ) : null}
           {(localError || errorMessage) ? (
-            <div className="banner danger" role="alert">
+            <div className="banner danger" role="alert" id="opening-error">
               {localError || errorMessage}
             </div>
           ) : null}

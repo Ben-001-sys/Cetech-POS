@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ShiftClosePolicyOverride } from "../../server/auth/policy";
 import type { OperationalPolicyView } from "../../server/admin/handle-operational-policy";
 import { parseDecimalToMinorUnits } from "../register/parseDecimalToMinorUnits";
+import { ManagementLoading } from "./ManagementLoading";
 
 export type PolicyScopeChoice = {
   readonly id: string;
@@ -30,10 +31,10 @@ export function PolicyPanel({
   readonly onSelectScope?: (id: string) => void;
 }) {
   if (loading) {
-    return <section className="card card-pad"><p>Loading operational rules…</p></section>;
+    return <ManagementLoading message="Loading operational rules…" />;
   }
   if (errorMessage) {
-    return <section className="card card-pad"><div className="banner danger">{errorMessage}</div></section>;
+    return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;
   }
   if (!view) {
     return <section className="card card-pad"><p>Operational rules are not available.</p></section>;
@@ -138,7 +139,7 @@ function PolicyEditor({
   }
 
   return (
-    <section className="card card-pad stack management-policy">
+    <section className="card card-pad stack management-policy" aria-busy={saving}>
       <div className="management-policy-head">
         <div>
           <h2>Shift closing</h2>
@@ -245,7 +246,7 @@ function PolicyEditor({
         />
       </label>
 
-      {localError ? <div className="banner danger">{localError}</div> : null}
+      {localError ? <div className="banner danger" role="alert">{localError}</div> : null}
 
       <div className="settings-divider" />
 

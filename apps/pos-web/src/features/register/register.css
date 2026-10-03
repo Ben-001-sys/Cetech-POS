@@ -1,20 +1,31 @@
-.register-open,
-.register-close {
-  max-width: 420px;
-}
-
-.register-open .btn.primary {
-  width: 100%;
-}
-
-.register-screen {
-  display: grid;
-  gap: 16px;
-}
+.register-screen { display: grid; min-width: 0; gap: var(--space-4); }
+.register-screen > .page-head { margin-bottom: 0; }
+.register-open, .register-close { width: 100%; max-width: 480px; }
+.register-open h2, .register-close h2 { margin: 0 0 var(--space-5); font-size: var(--font-lg); }
+.register-open .btn.primary, .register-close .btn.primary { width: 100%; }
+.register-open .field, .register-close .field { min-width: 0; }
+.register-open .muted, .register-close .muted { line-height: 1.55; }
+.register-open input[inputmode="decimal"], .register-close input[inputmode="decimal"] { font-variant-numeric: tabular-nums; font-size: var(--font-lg); }
+.register-close > .banner { display: grid; gap: var(--space-1); margin-bottom: var(--space-5); }
+.register-current { display: grid; gap: var(--space-4); width: 100%; max-width: 640px; }
+.register-current > p { margin: 0; }
+.register-current [data-working-register] { min-width: 0; }
+.register-current [data-working-register] > p { margin: 0; overflow-wrap: anywhere; }
+.register-current > .btn { justify-self: start; }
+.register-report { display: grid; min-width: 0; width: 100%; max-width: 640px; gap: var(--space-3); }
+.register-report > strong { font-size: var(--font-md); }
+.register-report > p { margin: 0; line-height: 1.55; }
+.register-report-value { border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); padding: var(--space-3) var(--space-4); font-size: var(--font-md); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.register-report-loading { max-width: 640px; display: grid; gap: var(--space-4); }
+.register-report-loading > p { margin: 0; }
+.register-report-skeleton { display: grid; gap: var(--space-3); }
+.register-report-skeleton .skeleton-line { height: 44px; }
+.register-screen > [data-shift-attention] { flex-wrap: wrap; align-items: center; }
 
 @media (max-width: 820px) {
-  .register-open,
-  .register-close {
-    max-width: none;
-  }
+  .register-open, .register-close, .register-current, .register-report, .register-report-loading { max-width: none; }
+}
+
+@media (max-width: 480px) {
+  .register-current > .btn { width: 100%; }
 }

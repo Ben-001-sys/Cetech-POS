@@ -3,6 +3,7 @@
 import type { ManagementSystemHealthView } from "../../server/admin/management-system-health";
 import type { StaffSignInDiagnosticReason } from "../../core/identity/sign-in-diagnostic";
 import { formatOperationalDateTime } from "../../ui/cashier-language";
+import { ManagementLoading } from "./ManagementLoading";
 
 const STATUS_LABEL = {
   unavailable: "Unavailable",
@@ -30,11 +31,7 @@ export function SystemHealthPanel({
   readonly correlationId?: string;
 }) {
   if (loading) {
-    return (
-      <section className="card card-pad" aria-live="polite">
-        <p>Loading system health…</p>
-      </section>
-    );
+    return <ManagementLoading message="Loading system health…" />;
   }
   if (errorMessage || !view) {
     return (

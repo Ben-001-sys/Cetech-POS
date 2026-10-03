@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ManagementReturnsAttentionItem, ManagementReturnsAttentionView } from "../../server/admin/management-returns-attention-directory";
 import { approveManagementReturn, reconcileManagementRefund } from "../../app/management-client";
 import { formatMoneyLabel, paymentStatusLabel } from "../../ui/cashier-language";
+import { ManagementLoading } from "./ManagementLoading";
 
 const PRIORITY_LABEL = {
   needs_attention: "Needs attention",
@@ -32,11 +33,7 @@ export function ReturnsApprovalsPanel({
   readonly onChanged?: () => void;
 }) {
   if (loading) {
-    return (
-      <section className="card card-pad" aria-live="polite">
-        <p>Loading returns and refunds…</p>
-      </section>
-    );
+    return <ManagementLoading message="Loading returns and refunds…" />;
   }
   if (errorMessage) {
     return (

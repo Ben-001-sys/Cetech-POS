@@ -60,8 +60,21 @@ export function ConnectivityNotice({ state }: { readonly state: "online" | "offl
       <span>
         {state === "offline"
           ? "Saved local work stays on this device. Online-required actions must wait for connection."
-          : "Some services may be slower or temporarily unavailable. Uncertain transaction results must be resolved before retrying."}
+          : "Some services may be slower or temporarily unavailable. If a sale or payment result is unclear, check its status before trying again."}
       </span>
+    </div>
+  );
+}
+
+function OperationalLoadingState({ message }: { readonly message: string }) {
+  return (
+    <div className="card card-pad operational-state operational-loading" role="status" aria-live="polite">
+      <div className="workspace-skeleton" aria-hidden="true">
+        <span className="skeleton-line" />
+        <span className="skeleton-line" />
+        <span className="skeleton-line" />
+      </div>
+      <strong>{message}</strong>
     </div>
   );
 }
@@ -125,22 +138,19 @@ export function StoreHealthScreen({
         </div>
       ) : null}
 
-      <div className="operational-metrics" aria-label="System status summary">
+      <div className="operational-metrics" aria-label="System status summary" aria-busy={state === "loading"}>
         <div className="card operational-metric">
           <span className="eyebrow">Pending work</span>
-          <strong>{pendingOperationCount}</strong>
+          <strong>{state === "loading" && !health ? "—" : pendingOperationCount}</strong>
         </div>
         <div className="card operational-metric">
           <span className="eyebrow">Needs attention</span>
-          <strong>{attentionCount}</strong>
+          <strong>{state === "loading" && !health && attentionCountOverride === undefined ? "—" : attentionCount}</strong>
         </div>
       </div>
 
       {state === "loading" ? (
-        <div className="card card-pad operational-state" role="status" aria-live="polite">
-          <div className="operational-spinner" aria-hidden="true" />
-          <strong>Checking System status…</strong>
-        </div>
+        <OperationalLoadingState message="Checking System status…" />
       ) : null}
 
       {state !== "loading" ? (
@@ -215,10 +225,7 @@ export function NeedsAttentionScreen({
         </div>
       ) : null}
       {state === "loading" ? (
-        <div className="card card-pad operational-state" role="status">
-          <div className="operational-spinner" aria-hidden="true" />
-          <strong>Checking unresolved operations…</strong>
-        </div>
+        <OperationalLoadingState message="Checking unresolved operations…" />
       ) : null}
       {state !== "loading" && state !== "error" && items.length === 0 ? (
         <div className="card card-pad">
@@ -314,7 +321,11 @@ export function UpdateReadyDialog({ open, safety, currentBuild: _currentBuild, n
 
   useEffect(() => {
     if (open) {
+      const previousFocus = document.activeElement;
       dialogRef.current?.focus();
+      return () => {
+        if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+      };
     }
   }, [open]);
 
@@ -334,13 +345,31 @@ export function UpdateReadyDialog({ open, safety, currentBuild: _currentBuild, n
             event.preventDefault();
             onLater();
           }
+          if (event.key === "Tab") {
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+              'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+            )).filter((control) => control.getClientRects().length > 0);
+            const first = controls[0];
+            const last = controls.at(-1);
+            if (!first || !last) {
+              event.preventDefault();
+              return;
+            }
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === event.currentTarget)) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
         }}
       >
         <div className="operational-dialog-head"><div><span className="eyebrow">Application update</span><h2 id="update-ready-title">Update ready</h2></div></div>
         <div className="operational-dialog-body stack">
           {safety === "blocked_critical" ? <div className="banner danger" role="alert"><strong>Update blocked by active transaction.</strong><span>The new version must wait until payment or recovery reaches a safe point.</span></div> : null}
           {safety === "defer" ? <div className="banner warning" role="status"><strong>Update deferred.</strong><span>Finish or safely clear the current work before applying the update.</span></div> : null}
-          {safety === "safe" ? <div className="banner success" role="status"><strong>Safe to update.</strong><span>No critical transaction state is reported by the update coordinator.</span></div> : null}
+          {safety === "safe" ? <div className="banner success" role="status"><strong>Safe to update.</strong><span>Your saved cart and pending work will be kept.</span></div> : null}
           <dl className="operational-detail-list">{nextBuild ? <div><dt>Update</dt><dd>New version ready</dd></div> : null}<div><dt>Saved cart and pending work</dt><dd>Kept</dd></div><div><dt>Product list</dt><dd>Can be refreshed</dd></div></dl>
         </div>
         <div className="operational-dialog-actions"><button className="btn" type="button" onClick={onLater}>Update later</button><button className="btn primary" type="button" disabled={!safe} onClick={onApply}>Update now</button></div>

@@ -113,6 +113,7 @@ export function LoginScreen({
       : null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,25 +150,43 @@ export function LoginScreen({
           <label className="field">
             <span>Email</span>
             <input
+              className="input"
               type="email"
               name="staff-email"
               autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              inputMode="email"
               value={email}
               disabled={loading}
               onChange={(event) => setEmail(event.target.value)}
             />
           </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              name="staff-password"
-              autoComplete="current-password"
-              value={password}
-              disabled={loading}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
+          <div className="field">
+            <label htmlFor="staff-password">Password</label>
+            <span className="auth-password-control">
+              <input
+                className="input"
+                id="staff-password"
+                type={passwordVisible ? "text" : "password"}
+                name="staff-password"
+                autoComplete="current-password"
+                value={password}
+                disabled={loading}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                className="auth-password-toggle"
+                type="button"
+                disabled={loading}
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                aria-pressed={passwordVisible}
+                onClick={() => setPasswordVisible((current) => !current)}
+              >
+                {passwordVisible ? "Hide" : "Show"}
+              </button>
+            </span>
+          </div>
           <button
             className="btn primary block"
             type="submit"

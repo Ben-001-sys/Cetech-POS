@@ -737,6 +737,26 @@ independent integration review: required before any integration/main merge
 Paths beginning `src/` or `e2e/` are relative to `apps/pos-web`. The consumer delegation is limited to the owner's urgent quote correction, not a transfer of general WS1 ownership. Upstream WordPress latency must remain open until live timings prove improvement. A timeout is not proof that pricing became fast.
 
 ---
+
+
+## UI-REF-20261003 — owner-authorized UI refinement — REVIEW HANDOFF
+
+Owner instruction, 2026-10-03 01:39 UTC: implement the UI changes discussed in this chat, with an 80-minute target and parallel agents as needed. This is an explicit bounded WS1 presentation reassignment to the senior/user implementing editor (@wbdevworld), expiring at review handoff. Existing source/reference bytes and commercial workflows remain intact.
+
+- Branch: `ws1/ui-refinement-2026-10-03`.
+- Baseline: deployed quote correction `2c7eb2ddeb22c3402d82673421a54dbe6ad236f1`; declared integration `1021cd113c783e25030fe9c0bda1be9ddcf5888c`.
+- Allowed: non-receipt `apps/pos-web/src/ui/**`, `src/features/**`; focused frontend/e2e tests; this ledger, WS1 evidence/handoff and affected staff documentation. WS3 presentation-only composition in `src/app/globals.css` may be edited by the root integration editor if necessary.
+- Parallel ownership: shell agent owns tokens/workspace/shell/toast/auth; Sell agent owns non-receipt Sell components/styles; operations agent owns Orders/Returns/Register/Customers; management agent owns non-receipt Management panels/styles; verification agent owns new refinement browser evidence/tests. Root alone owns docs/integration/composition and Settings outside receipt-owned controls. Each contributor has an isolated branch/worktree.
+- Forbidden: receipt layout/settings/snapshot/print components and receipt CSS rules; core/server/local/config/contracts/migrations/dependencies/CI/service worker; WordPress bridge; main/protected branches; live commercial mutations; production promotion. Receipt work remains owned by `RECEIPT-REF-01` in its separate checkout.
+- Canonical owners: Woo prices/orders/stock; Supabase POS operations; local drafts/journal remain preserved. Consumes existing v1 ports; no contract/migration/architecture changes.
+- Acceptance: refined coherent visuals, usable responsive layouts, stable loading/error feedback, keyboard/touch accessibility, unchanged quote/payment/refund/shift/update safeguards; foundation/lint/typecheck/unit/build and relevant browser checks. Synthetic browser tests are not live payment/hardware proof.
+- Staff documentation impact: yes; update current guide/workbook and formatted copies together after assembly.
+- Independent exact-head human review remains required before integration/main merge. Publish a reviewable contributor candidate; do not self-merge. Staging deployment must use a qualified combined candidate that preserves any completed receipt handoff.
+
+Implementation and local production verification are complete. Contributor leases are released after import. [PR #135](https://github.com/WB-DevWorld/cetech-pwa-pos/pull/135) holds the UI-only review candidate; [UI evidence](tests/frontend/evidence/ui-refinement-2026-10-03/README.md) records tests, screenshots, contributor provenance and the pinned receipt compatibility checkout. The designated independent human reviewer is @Ben-001-sys; approval is pending and AI quality review does not supply that approval. No integration/main merge, staging alias change, database write or production promotion occurred. Final upstream cutoff: 2026-10-03T02:12:22.605Z, main `c49045dd02c46574af5d341cc65c177116fa7306`, declared integration `1021cd113c783e25030fe9c0bda1be9ddcf5888c`. Final remote head and exact-head CI result belong in the PR handoff. No autonomous third freshness pass.
+
+---
+
 ## RECEIPT-REF-01 — reference receipt layout and bounded settings — REVIEW HANDOFF
 
 Owner instructions on 2026-10-03: implement the receipt reference and accepted configuration recommendation; update the existing tester URL after qualification. This authorizes a bounded WS1 receipt/settings presentation reassignment to the senior implementing editor and the necessary WS3 schema, settings, immutable snapshot and print composition changes. It does not transfer general WS1 ownership. Current explicit owner instructions govern this new assignment over historical task prohibitions below.
@@ -816,3 +836,23 @@ staff-documentation impact: YES, top alignment and selected printer paper behavi
 ```
 
 The receipt_render contributor produced local source `e595619e4bd6cf1609ad8e768397d0e1bbbbf5bd` from the pinned equivalent receipt baseline. Its four allowed files were imported without other contributor changes. The contributor lease is released; the root is now the sole integration editor. Local source review found no new runtime blocker. Focused verification passed: 16 unit tests, 9 Chromium tests, focused lint and TypeScript. A negative control using the old helper failed the actual PDF heading-position assertion (~197 pt down), demonstrating that the new tests detect the reported defect rather than only checking DOM position or CSS spelling. Exact remote combined SHA, CI, final freshness and rollout evidence belong in the PR handoff. Physical printer/Safari output remains unverified.
+
+
+## UI-REL-20261003 — combined UI and receipt tester deployment — ACTIVE
+
+Current owner instructions, 2026-10-03 03:04 UTC: “IMPLEMENT THE UI AND RETAIN THE RECEIPT CHANGES”, “DEPLOY THEM TO SAME LINK”, “AS TESTERS”. This explicitly authorizes combined staging qualification and deployment under the previously requested one-time owner release exception. The implementing/integration editor remains @wbdevworld / WS3 with the bounded WS1 UI reassignment. AI review supplies evidence; no independent human approval is asserted.
+
+- Integration branch: `ws3/ui-receipts-testers-2026-10-03`; root is the sole integration editor, using an isolated checkout.
+- UI source: PR #135 / `b8fb4610092dc544e5bba76f920048d170088600`, tree `2ee0f9b23b3b797cb7a40c29c3be5d180c3d5e58`.
+- Receipt and top-print source: `0ce2db1be990a75fec500c410e980384fd05ec74`, tree `75df239ff4bc4b4ece0421ad268b01da42b4eedd`; local equivalent `d2816447203f6ef76b6eb683643811da12afe92f`.
+- Provisional combined UI/receipt verification source before top-print import: `1cf24631a7eec96703c5f370dfc6b0917e57cfb0`.
+- Allowed: import these declared tested sources; compose shared presentation and staff-doc hunks; qualification tests and evidence; this ledger; publish a combined review candidate; create a qualified staging Preview and move only the existing tester alias.
+- Tester URL: https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app/
+- Required qualification: preserved UI/receipt source union, source review, foundation/lint/typecheck/unit/build/browser checks, exact-head Linux/Windows CI, immutable Preview identity/smoke, same-hostname acceptance after alias assignment.
+- Receipt migration `20261003012953` is already applied to CETECH POS staging; this assignment does not reapply it. Read-only catalog inspection verified the JSONB column and single optional-argument RPC with service-role-only execution.
+- Rollback must retain additive receipt contract/parser support. Use the qualified receipt/top-print Preview as fallback, not pre-receipt pricing-only source `2c7eb2d` after new snapshots exist.
+- Forbidden: permanent review/workflow/protection changes, fabricated approval, main/integration merge, production promotion, electronic payment/refund/restock, VitePOS cutover, historical receipt rewrite, cache/IndexedDB/draft/journal clearing, secret disclosure, unrelated source changes.
+- Expiry: this exact combined tester release handoff; Ben's independent source review remains pending and the exception does not authorize future releases.
+- Staff documentation impact: YES. Preserve current UI guide/workbook changes and the latest receipt paper/top-position instructions in their maintained copies.
+
+Final combined local/remote SHA, exact-head CI results, immutable Preview and alias evidence belong in the combined PR handoff and its release evidence index. The earlier UI task's two-pass cutoff remains historical; this is a new owner-authorized deployment assignment, not an autonomous third freshness pass.

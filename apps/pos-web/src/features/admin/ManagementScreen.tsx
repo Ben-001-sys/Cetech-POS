@@ -39,6 +39,35 @@ const LABELS: Record<ManagementSection, { label: string; description: string }> 
   },
 };
 
+const NAV_GROUPS: readonly { readonly label: string; readonly sections: readonly ManagementSection[] }[] = [
+  { label: "Workspace", sections: ["overview", "staff_access", "locations", "registers", "devices"] },
+  { label: "Operations", sections: ["shifts_cash", "returns_approvals"] },
+  { label: "Configuration", sections: ["policies", "receipt_settings"] },
+  { label: "Support", sections: ["system_health", "audit"] },
+];
+
+const ICON_PATHS: Record<ManagementSection, string> = {
+  overview: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+  staff_access: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 21v-2a4 4 0 0 0-3-4 M16 3a4 4 0 0 1 0 8",
+  locations: "M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 0 1 16 0Z M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6",
+  registers: "M3 4h18v12H3z M8 20h8 M12 16v4 M7 8h4 M7 12h10",
+  devices: "M7 2h10v20H7z M10 18h4",
+  shifts_cash: "M12 3v18 M16 6H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8",
+  returns_approvals: "M9 4 4 9l5 5 M4 9h11a6 6 0 0 1 0 12h-3",
+  policies: "M4 7h16 M4 17h16 M8 4v6 M16 14v6",
+  receipt_settings: "M6 3h12v18l-3-2-3 2-3-2-3 2Z M9 7h6 M9 11h6 M9 15h3",
+  system_health: "M3 12h4l3-8 4 16 3-8h4",
+  audit: "M6 3h12v18H6z M9 7h6 M9 11h6 M9 15h6",
+};
+
+function ManagementIcon({ section }: { readonly section: ManagementSection }) {
+  return (
+    <svg className="management-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ICON_PATHS[section]} />
+    </svg>
+  );
+}
+
 export function ManagementScreen({
   context,
   activeSection = "overview",
@@ -195,6 +224,7 @@ export function ManagementScreen({
 
   return (
     <div className="management-shell" data-management-role={context.controlRole ?? "manager"}>
+      <a className="skip-link" href="#management-workspace">Skip to management content</a>
       <aside className="management-sidebar" aria-label="Management navigation">
         <div className="management-brand">
           <span className="brand-mark">CT</span>
@@ -203,27 +233,37 @@ export function ManagementScreen({
             <span>Management</span>
           </div>
         </div>
-        <nav className="management-nav">
-          {context.sections.map((section) => (
-            <button
-              key={section}
-              type="button"
-              className={activeSection === section ? "management-nav-item active" : "management-nav-item"}
-              aria-current={activeSection === section ? "page" : undefined}
-              onClick={() => onSelectSection?.(section)}
-            >
-              {LABELS[section].label}
-            </button>
-          ))}
+        <nav className="management-nav" aria-label="Management sections">
+          {NAV_GROUPS.map((group) => {
+            const sections = group.sections.filter((section) => context.sections.includes(section));
+            if (sections.length === 0) return null;
+            return (
+              <div className="management-nav-group" key={group.label}>
+                <span className="management-nav-label">{group.label}</span>
+                {sections.map((section) => (
+                  <button
+                    key={section}
+                    type="button"
+                    className={activeSection === section ? "management-nav-item active" : "management-nav-item"}
+                    aria-current={activeSection === section ? "page" : undefined}
+                    onClick={() => onSelectSection?.(section)}
+                  >
+                    <ManagementIcon section={section} />
+                    <span>{LABELS[section].label}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         {onBackToPos ? (
-          <button className="btn block" type="button" onClick={onBackToPos}>
-            Back to POS
+          <button className="btn block management-back" type="button" onClick={onBackToPos}>
+            <span aria-hidden="true">←</span> Back to POS
           </button>
         ) : null}
       </aside>
 
-      <main className="management-main">
+      <main className="management-main" id="management-workspace" tabIndex={-1}>
         <header className="management-topbar">
           <div>
             <span className="eyebrow">Management</span>
@@ -231,26 +271,29 @@ export function ManagementScreen({
           </div>
           <div className="management-identity">
             <strong>{context.displayName}</strong>
-            <span>{roleLabel}</span>
+            <span className="management-role-label">{roleLabel}</span>
           </div>
         </header>
 
-        <section className="management-content">
+        <section className={activeSection === "receipt_settings" ? "management-content" : "management-content management-workspace"} aria-label={active.label}>
           <p className="management-lead">{active.description}</p>
 
           {activeSection === "overview" ? (
             <div className="management-grid">
               <ManagementCard title="Access">
-                <p>Organization role: {context.controlRole
-                  ? context.controlRole[0]!.toUpperCase() + context.controlRole.slice(1)
-                  : "No organization role"}</p>
-                <p>Managed locations: {context.managerLocationIds.length}</p>
+                <dl className="management-overview-facts">
+                  <div><dt>Organization role</dt><dd>{context.controlRole
+                    ? context.controlRole[0]!.toUpperCase() + context.controlRole.slice(1)
+                    : "No organization role"}</dd></div>
+                  <div><dt>Managed locations</dt><dd>{context.managerLocationIds.length}</dd></div>
+                </dl>
+                <p className="muted">Your role and assigned locations determine the actions available here.</p>
               </ManagementCard>
-              <ManagementCard title="Staff & access">
+              <ManagementCard title="Staff & access" action={context.sections.includes("staff_access") && onSelectSection ? { label: "View staff & access", onClick: () => onSelectSection("staff_access") } : undefined}>
                 <p>Staff access is limited to the organization and locations you are allowed to manage.</p>
                 <p>Owners and Admins manage organization access. Managers may update register assignments only for staff already assigned to their locations.</p>
               </ManagementCard>
-              <ManagementCard title="Shift-closing rules">
+              <ManagementCard title="Shift-closing rules" action={context.sections.includes("policies") && onSelectSection ? { label: "View operational rules", onClick: () => onSelectSection("policies") } : undefined}>
                 <p>Rules can be set for the organization, a location, or a register.</p>
                 <p>Cashiers, managers, or both can be allowed to close shifts according to the applicable rules.</p>
               </ManagementCard>
@@ -385,14 +428,17 @@ function UnhandledSection({ section }: { readonly section: never }) {
 function ManagementCard({
   title,
   children,
+  action,
 }: {
   readonly title: string;
   readonly children: ReactNode;
+  readonly action?: { readonly label: string; readonly onClick: () => void };
 }) {
   return (
     <section className="card card-pad stack management-card">
       <h2>{title}</h2>
       {children}
+      {action ? <button className="btn management-card-action" type="button" onClick={action.onClick}>{action.label}<span aria-hidden="true">→</span></button> : null}
     </section>
   );
 }

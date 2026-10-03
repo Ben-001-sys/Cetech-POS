@@ -15,6 +15,7 @@ import type {
 } from "../../server/admin/management-shift-cash-directory";
 import type { ShiftClosePolicy } from "../../server/auth/policy";
 import { formatMoneyLabel, formatOperationalDateTime } from "../../ui/cashier-language";
+import { ManagementLoading } from "./ManagementLoading";
 
 const STATUS_LABEL = {
   open: "Open",
@@ -47,11 +48,7 @@ export function ShiftCashPanel({
   readonly now?: Date;
 }) {
   if (loading) {
-    return (
-      <section className="card card-pad" aria-live="polite">
-        <p>Loading shifts and cash…</p>
-      </section>
-    );
+    return <ManagementLoading message="Loading shifts and cash…" />;
   }
   if (errorMessage) {
     return (

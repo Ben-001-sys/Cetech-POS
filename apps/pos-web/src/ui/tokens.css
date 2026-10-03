@@ -1,17 +1,16 @@
-/* Semantic POS tokens — translated from the approved frontend reference.
-   Values are the reference palette; names are the production design system. */
+/* Semantic POS tokens. Font sizes remain stable for existing receipt layouts. */
 
 :root {
-  --color-bg: #f5f7fa;
+  --color-bg: #f5f6f8;
   --color-surface: #ffffff;
-  --color-surface-2: #eef2f7;
-  --color-surface-3: #e4eaf2;
-  --color-text: #172033;
-  --color-text-muted: #5d6b80;
-  --color-border: #d7dee8;
-  --color-primary: #174ea6;
-  --color-primary-hover: #123e84;
-  --color-primary-soft: #e9f0fc;
+  --color-surface-2: #f0f3f7;
+  --color-surface-3: #e5ebf3;
+  --color-text: #192536;
+  --color-text-muted: #5d6b7e;
+  --color-border: #dce3ec;
+  --color-primary: #1d56b3;
+  --color-primary-hover: #174796;
+  --color-primary-soft: #ebf2ff;
   --color-success: #177245;
   --color-success-soft: #e7f6ee;
   --color-warning: #9a5b00;
@@ -20,8 +19,8 @@
   --color-danger-soft: #fdecea;
   --color-info: #2459a8;
   --color-info-soft: #e9f0fc;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08);
-  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.12);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.035);
+  --shadow-md: 0 12px 36px rgba(16, 24, 40, 0.10);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -133,6 +132,8 @@ button,
 }
 
 button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -179,7 +180,7 @@ button:disabled {
   color: var(--color-text);
   border-radius: 10px;
   padding: 9px 14px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -211,7 +212,7 @@ button:disabled {
   background: transparent;
   border-color: transparent;
   color: var(--color-text-muted);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .btn.ghost:hover:not(:disabled) {
@@ -257,8 +258,8 @@ button:disabled {
 
 .eyebrow {
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
@@ -271,7 +272,7 @@ button:disabled {
 .field label,
 .field .label {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .input,
@@ -300,6 +301,8 @@ button:disabled {
 .page-head h1 {
   margin: 0 0 4px;
   font-size: var(--font-xl);
+  font-weight: 650;
+  letter-spacing: -0.025em;
 }
 
 .page-head p {
@@ -352,5 +355,78 @@ button:disabled {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/* Screen controls share one rhythm without changing receipt typography. */
+.btn,
+.icon-btn,
+.input,
+.select {
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.btn,
+.icon-btn {
+  touch-action: manipulation;
+}
+
+.btn.primary {
+  box-shadow: 0 1px 2px rgb(16 24 40 / 8%);
+}
+
+html[data-theme="dark"] .btn.primary {
+  color: #10213b;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .btn.primary {
+    color: #10213b;
+  }
+}
+
+.btn svg,
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.input::placeholder,
+.select::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.input:hover:not(:disabled),
+.select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+}
+
+.input:disabled,
+.select:disabled {
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.page-head > div {
+  min-width: 0;
+}
+
+.banner {
+  line-height: 1.5;
+}
+
+.banner strong {
+  font-weight: 650;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .icon-btn,
+  .input,
+  .select {
+    transition: none;
   }
 }

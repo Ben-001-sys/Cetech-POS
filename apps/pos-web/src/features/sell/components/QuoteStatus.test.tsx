@@ -119,6 +119,17 @@ describe("QuoteStatus markup", () => {
 });
 
 describe("CartPanel eligibility presentation", () => {
+  test("a pending quote gives local progress without presenting an unconfirmed amount", () => {
+    const html = renderCart(
+      { status: "quoting", revision: 2 },
+      { allowed: false, reason: "QUOTE_REQUIRED", message: "Checkout is unavailable until the price is ready." },
+    );
+    expect(html).toContain("Checking…");
+    expect(html).toContain("Updating price…");
+    expect(html).not.toContain("GHS");
+    expect(html).toMatch(/pay-btn[^>]*disabled/);
+  });
+
   test("QUOTE_REQUIRED explains disabled Pay", () => {
     const html = renderCart(
       { status: "missing" },

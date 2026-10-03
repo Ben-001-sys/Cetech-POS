@@ -102,7 +102,7 @@ export function ReturnFlow({
           <article key={line.orderLineId} className="card card-pad return-line" data-order-line-id={line.orderLineId}>
             <div className="row between">
               <div>
-                <strong className="compact-product-name">{line.name}</strong>
+                <strong className="return-product-name">{line.name}</strong>
                 <div className="muted">Sold {line.originalSoldQuantity}</div>
               </div>
             </div>
@@ -112,6 +112,7 @@ export function ReturnFlow({
                 <input
                   id={`return-qty-${line.orderLineId}`}
                   className="input"
+                  inputMode="decimal"
                   value={line.quantity}
                   disabled={fieldsDisabled}
                   onChange={(event) => onUpdateLine(line.orderLineId, { quantity: event.target.value })}

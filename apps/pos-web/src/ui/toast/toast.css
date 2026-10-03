@@ -1,36 +1,47 @@
+/* Confirmations stay in document flow so product and payment controls remain visible. */
 .app-toast {
-  position: fixed;
-  top: 76px;
-  right: 28px;
-  z-index: 160;
-  max-width: min(420px, calc(100vw - 36px));
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: #101828;
-  color: #fff;
-  box-shadow: var(--shadow-md);
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 20px 0;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-info) 16%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--color-info-soft);
+  color: var(--color-text);
+  min-width: 0;
   pointer-events: none;
+}
+
+.app-toast-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--color-info);
+}
+
+.app-toast-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .app-toast strong {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .app-toast span {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--color-text-muted);
   white-space: pre-line;
 }
 
 @media (max-width: 820px) {
   .app-toast {
-    top: auto;
-    bottom: 88px;
-    right: 12px;
-    left: 12px;
-    max-width: none;
+    margin: 10px 14px 0;
+    padding: 10px 12px;
   }
 }

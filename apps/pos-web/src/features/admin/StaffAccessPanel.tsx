@@ -5,6 +5,7 @@ import type { StaffAssignmentRole } from "../../server/auth/roles";
 import type { OrganizationControlRole } from "../../server/auth/policy";
 import type { StaffAccessLocation, StaffAccessRecord } from "../../server/admin/staff-access-directory";
 import type { ManagementLocation } from "../../server/admin/management-topology-directory";
+import { ManagementLoading } from "./ManagementLoading";
 
 export function StaffAccessPanel({
   rows,
@@ -72,10 +73,10 @@ export function StaffAccessPanel({
   }) => void;
 }) {
   if (loading) {
-    return <section className="card card-pad"><p>Loading staff access…</p></section>;
+    return <ManagementLoading message="Loading staff access…" />;
   }
   if (errorMessage) {
-    return <section className="card card-pad"><div className="banner danger">{errorMessage}</div></section>;
+    return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;
   }
   const addStaff = canManage && onInviteStaff && onCreateStaff ? (
     <AddStaffCard
@@ -164,7 +165,7 @@ function StaffCard({
     (location) => !row.locations.some((assignment) => assignment.locationId === location.id),
   );
   return (
-    <section className="card card-pad stack management-staff-card">
+    <section className="card card-pad stack management-staff-card" aria-busy={saving}>
       <div className="management-staff-head">
         <div>
           <h2>{row.displayName}</h2>
@@ -703,7 +704,7 @@ function AddStaffCard({
   }
 
   return (
-    <section className="card card-pad stack management-invite-card">
+    <section className="card card-pad stack management-invite-card" aria-busy={inviting}>
       <div>
         <h2>Add staff</h2>
         <p className="muted">Create a login now, or email a secure invitation. POS access stays off until setup succeeds.</p>
@@ -812,7 +813,7 @@ function AddStaffCard({
       ) : (
         <p className="muted">Invited staff cannot use the POS until you assign their locations and registers and enable POS access.</p>
       )}
-      {localError ? <div className="banner danger">{localError}</div> : null}
+      {localError ? <div className="banner danger" role="alert">{localError}</div> : null}
       <button className="btn primary" type="button" disabled={inviting} onClick={submit}>
         {inviting ? "Saving…" : method === "invite" ? "Send invitation" : "Create account"}
       </button>

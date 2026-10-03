@@ -1,6 +1,7 @@
 "use client";
 
 import { PRIMARY_NAV_ITEMS, POS_ROUTE_HREFS, SETTINGS_NAV_ITEM, type PosRoute } from "./routes";
+import { NavIcon } from "./NavIcon";
 
 export type PrimaryNavProps = {
   activeRoute: PosRoute;
@@ -12,14 +13,12 @@ export type PrimaryNavProps = {
 function NavButton({
   route,
   label,
-  icon,
   active,
   badge,
   onNavigate,
 }: {
   route: PosRoute;
   label: string;
-  icon: string;
   active: boolean;
   badge?: string;
   onNavigate?: (route: PosRoute) => void;
@@ -36,9 +35,9 @@ function NavButton({
       onClick={() => onNavigate?.(route)}
     >
       <span className="icon" aria-hidden="true">
-        {icon}
+        <NavIcon route={route} />
       </span>
-      <span>
+      <span className="nav-label">
         {label}
         {badge ? <span className="nav-badge"> {badge}</span> : null}
       </span>
@@ -60,7 +59,6 @@ export function PrimaryNav({
           key={item.route}
           route={item.route}
           label={item.label}
-          icon={item.icon}
           active={activeRoute === item.route}
           badge={item.route === "attention" && attentionCount > 0 ? String(attentionCount) : undefined}
           onNavigate={onNavigate}

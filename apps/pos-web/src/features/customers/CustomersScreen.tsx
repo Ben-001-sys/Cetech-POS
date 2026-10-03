@@ -95,9 +95,17 @@ export function CustomersScreen({
       </div>
 
       {state === "loading" ? (
-        <div className="card card-pad workspace-state" role="status" aria-live="polite">
-          <div className="workspace-spinner" aria-hidden="true" />
+        <div className="card card-pad workspace-skeleton customers-loading" role="status" aria-live="polite">
           <div><strong>Loading customers…</strong><p>You can continue as Walk-in from Sell.</p></div>
+          <div className="customer-card-grid" aria-hidden="true">
+            {[0, 1, 2, 3].map((card) => (
+              <div className="customer-skeleton-card" key={card}>
+                <span className="skeleton-line" />
+                <span className="skeleton-line" />
+                <span className="skeleton-block" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -118,8 +126,9 @@ export function CustomersScreen({
             return (
               <article className="card card-pad customer-card" key={customer.id} data-selected={selected ? "true" : "false"}>
                 <div className="customer-card-heading">
-                  <div>
+                  <div className="customer-card-identity">
                     <strong>{customer.company ?? customer.displayName}</strong>
+                    {customer.company && customer.company !== customer.displayName ? <span className="workspace-subline">{customer.displayName}</span> : null}
                     {customer.phoneMasked ? <span className="workspace-subline">{customer.phoneMasked}</span> : null}
                     {customer.kind === "b2b" && commercialContext ? (
                       <span className="workspace-subline">Wholesale · {commercialContext}</span>

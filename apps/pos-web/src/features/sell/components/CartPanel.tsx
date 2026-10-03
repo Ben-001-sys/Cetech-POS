@@ -18,6 +18,7 @@ import { QuoteStatus } from "./QuoteStatus";
 export function CartLineRow({
   line,
   quotedLine,
+  pricePending = false,
   onIncrement,
   onDecrement,
   onQuantityChange,
@@ -25,6 +26,7 @@ export function CartLineRow({
 }: {
   line: CartLineView;
   quotedLine?: QuotePresentationLine;
+  pricePending?: boolean;
   onIncrement: (lineId: string) => void;
   onDecrement: (lineId: string) => void;
   onQuantityChange: (lineId: string, quantity: string) => void;
@@ -70,11 +72,12 @@ export function CartLineRow({
     <article className="cart-line">
       <div className="cart-line-title">
         <div>
-          <div className="cart-line-name">{line.name}</div>
+          <div className="cart-line-name" title={line.name}>{line.name}</div>
           {line.variationLabel ? <div className="muted cart-line-variation">{line.variationLabel}</div> : null}
           {skuLabel(line.sku) ? <div className="muted cart-line-sku">{skuLabel(line.sku)}</div> : null}
+          {quotedLine ? <div className="cart-line-unit muted">{formatMoneyDisplay(quotedLine.unitPrice)} each</div> : null}
         </div>
-        {quotedLine ? <div className="cart-line-price">{formatMoneyDisplay(quotedLine.total)}</div> : null}
+        {quotedLine ? <div className="cart-line-price">{formatMoneyDisplay(quotedLine.total)}</div> : pricePending ? <div className="cart-line-price-pending"><span className="quote-spinner" aria-hidden="true" />Checking…</div> : null}
       </div>
       <div className="qty-row">
         <div className="qty-control">
@@ -102,7 +105,6 @@ export function CartLineRow({
             +
           </button>
         </div>
-        {quotedLine ? <div className="cart-line-unit muted">{formatMoneyDisplay(quotedLine.unitPrice)} each</div> : null}
         <button type="button" className="btn cart-line-remove" onClick={() => onRemove(line.lineId)}>
           Remove
         </button>
@@ -119,13 +121,10 @@ export function CartLineRow({
 function CustomerChipLabel({ customer }: { customer: CustomerSearchResultView | null }) {
   if (!customer) return <span className="customer-name">Walk-in</span>;
   return (
-    <span>
+    <span className="customer-chip-person">
       <span className="customer-name">{customer.displayName}</span>
       {customer.kind === "b2b" ? (
-        <>
-          <br />
-          <span className="sell-context-badge">Wholesale</span>
-        </>
+        <span className="sell-context-badge">Wholesale</span>
       ) : null}
     </span>
   );
@@ -181,6 +180,7 @@ export function CartPanel({
         <div className="cart-head-row">
           <div className="cart-title">
             <strong>Cart</strong>
+            <span className="cart-line-count">{lines.length}</span>
           </div>
           <div className="cart-head-actions">
             <button type="button" className="btn cart-back" onClick={onCloseMobile}>
@@ -192,12 +192,11 @@ export function CartPanel({
           </div>
         </div>
         <button type="button" className="customer-chip" onClick={onOpenCustomers}>
-          <span>
+          <span className="customer-chip-content">
             <span className="eyebrow">Customer</span>
-            <br />
             <CustomerChipLabel customer={customer} />
           </span>
-          <span aria-hidden="true">›</span>
+          <span className="customer-chip-chevron" aria-hidden="true">›</span>
         </button>
         {quote ? (
           <QuoteStatus quote={quote} cartLineNames={cartLineNames} onRetry={onRetryQuote} />
@@ -221,6 +220,7 @@ export function CartPanel({
               key={line.lineId}
               line={line}
               quotedLine={quotedLines?.find((quoted) => quoted.lineId === line.lineId)}
+              pricePending={quote?.status === "quoting"}
               onIncrement={onIncrement}
               onDecrement={onDecrement}
               onQuantityChange={onQuantityChange}

@@ -1,46 +1,91 @@
 .workspace-surface { min-width: 0; }
 .workspace-banner { margin-bottom: var(--space-3); flex-wrap: wrap; align-items: center; }
-.workspace-state { display: flex; min-height: 140px; align-items: center; justify-content: center; gap: var(--space-3); text-align: center; }
-.workspace-state p { margin: 6px 0 0; color: var(--color-text-muted); }
-.workspace-spinner { width: 24px; height: 24px; border: 3px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: workspace-spin .8s linear infinite; }
-.workspace-subline { display: block; margin-top: 3px; color: var(--color-text-muted); font-size: var(--font-sm); }
-.workspace-badge { display: inline-flex; width: fit-content; align-items: center; border-radius: 999px; padding: 4px 8px; background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--font-xs); font-weight: 800; text-transform: capitalize; }
+
+.workspace-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding-block: 28px;
+}
+
+.workspace-state strong { font-weight: 600; }
+.workspace-state p {
+  margin: 8px 0 0;
+  max-width: 46ch;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.workspace-spinner {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: workspace-spin .8s linear infinite;
+}
+
+.workspace-subline {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.workspace-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: capitalize;
+}
+
 .workspace-badge.success { background: var(--color-success-soft); color: var(--color-success); }
 .workspace-badge.warning { background: var(--color-warning-soft); color: var(--color-warning); }
 .workspace-badge.danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .workspace-badge.info { background: var(--color-info-soft); color: var(--color-info); }
 
-.technical-details {
-  margin-top: 10px;
-  font-size: var(--font-sm);
-  color: var(--color-text-muted);
+/* Decorative placeholders accompany a real text status, and should be aria-hidden. */
+.workspace-skeleton { display: grid; gap: 14px; width: 100%; min-width: 0; }
+.skeleton-line,
+.skeleton-block {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-surface-3) 50%, var(--color-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: workspace-shimmer 1.6s ease-in-out infinite;
 }
+.skeleton-line { height: 12px; width: 100%; }
+.skeleton-line.short { width: 36%; }
+.skeleton-line.medium { width: 64%; }
+.skeleton-line.title { height: 22px; width: 48%; }
+.skeleton-block { height: 76px; min-height: 0; width: 100%; border-radius: var(--radius-sm); }
 
-.technical-details summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.technical-details dl {
-  margin: 8px 0 0;
-  display: grid;
-  gap: 4px;
-}
-
-.technical-details dl > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.technical-details dt {
-  font-weight: 600;
-}
-
-.technical-details dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
+.technical-details { margin-top: 10px; font-size: var(--font-sm); color: var(--color-text-muted); }
+.technical-details summary { cursor: pointer; font-weight: 600; min-height: var(--touch); padding-block: 12px; }
+.technical-details summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--color-primary) 55%, transparent); outline-offset: 2px; border-radius: 4px; }
+.technical-details dl { margin: 8px 0 0; display: grid; gap: 6px; }
+.technical-details dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.technical-details dt { font-weight: 500; }
+.technical-details dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 
 @keyframes workspace-spin { to { transform: rotate(360deg); } }
+@keyframes workspace-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-spinner,
+  .skeleton-line,
+  .skeleton-block { animation: none; }
+}

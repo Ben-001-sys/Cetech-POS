@@ -6,7 +6,7 @@ import { CartPanel } from "./components/CartPanel";
 import { CatalogStatusBanners } from "./components/CatalogStatus";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CustomerPicker } from "./components/CustomerPicker";
-import { ProductResults, ProductSearch } from "./components/ProductSearch";
+import { ProductResults, ProductResultsSkeleton, ProductSearch } from "./components/ProductSearch";
 import { SellModal } from "./components/SellModal";
 import { SellToast } from "./components/SellToast";
 import { VariationDialog } from "./components/VariationDialog";
@@ -510,7 +510,7 @@ export function SellScreen({
                 </span>
               ) : null}
             </div>
-            {loading ? <p className="muted">Loading products…</p> : null}
+            {loading ? <ProductResultsSkeleton /> : null}
             {searchError ? (
               <div className="banner danger" role="alert">
                 Product search is unavailable. Try again.

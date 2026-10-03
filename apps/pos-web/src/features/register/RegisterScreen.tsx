@@ -56,7 +56,7 @@ export function RegisterScreen({
         </div>
       ) : null}
       {session.status === "open" ? (
-        <section className="card card-pad">
+        <section className="card card-pad register-current">
           <p className="muted">{session.registerName ?? "Shift open"}</p>
           <WorkingRegister choices={openForm.registers} selectedId={openForm.selectedRegisterId} onSelect={openForm.onRegisterChange} />
           {onShowXReport ? (
@@ -89,10 +89,15 @@ export function RegisterScreen({
         </div>
       ) : null}
       {session.reportPhase === "loading" ? (
-        <section className="card card-pad" data-shift-report="loading" role="status">
-          {session.report?.kind === "Z" || session.status === "closed"
+        <section className="card card-pad workspace-skeleton register-report-loading" data-shift-report="loading" role="status" aria-live="polite">
+          <p>{session.report?.kind === "Z" || session.status === "closed"
             ? "Loading the end-of-shift report."
-            : "Loading the shift summary."}
+            : "Loading the shift summary."}</p>
+          <div className="register-report-skeleton" aria-hidden="true">
+            <span className="skeleton-line" />
+            <span className="skeleton-line" />
+            <span className="skeleton-line" />
+          </div>
         </section>
       ) : null}
       {session.reportPhase === "empty" ? (
@@ -106,44 +111,44 @@ export function RegisterScreen({
         </div>
       ) : null}
       {session.report && session.reportPhase === "ready" && session.report.kind === "X" && (session.status === "open" || session.status === "closing") ? (
-        <section className="card card-pad" data-x-report="" data-shift-report="ready">
+        <section className="card card-pad register-report" data-x-report="" data-shift-report="ready">
           <strong>Shift summary (X report)</strong>
-          <div data-x-expected="">Expected {formatMoneyDisplay(session.report.expectedCash)}</div>
+          <div className="register-report-value" data-x-expected="">Expected {formatMoneyDisplay(session.report.expectedCash)}</div>
           {session.report.countedCash ? (
-            <div>Counted {formatMoneyDisplay(session.report.countedCash)}</div>
+            <div className="register-report-value">Counted {formatMoneyDisplay(session.report.countedCash)}</div>
           ) : null}
           {session.report.variance ? (
-            <div>Variance {formatSignedMoneyDisplay(session.report.variance)}</div>
+            <div className="register-report-value">Variance {formatSignedMoneyDisplay(session.report.variance)}</div>
           ) : null}
           <p className="muted">This is a live summary. The shift stays open.</p>
         </section>
       ) : null}
       {showClosed ? (
-        <section className="card card-pad" data-shift-closed="">
+        <section className="card card-pad register-report" data-shift-closed="">
           <div className="banner success" role="status">
             Shift closed successfully.
           </div>
           {session.countedCash ? (
-            <div data-closed-counted="">
+            <div className="register-report-value" data-closed-counted="">
               Counted {formatMoneyDisplay(session.countedCash)}
             </div>
           ) : null}
           {session.expectedCash ? (
-            <div data-closed-expected="" data-expected-cash-editable="false">
+            <div className="register-report-value" data-closed-expected="" data-expected-cash-editable="false">
               Expected {formatMoneyDisplay(session.expectedCash)}
             </div>
           ) : null}
           {session.variance ? (
-            <div data-closed-variance="">Variance {formatSignedMoneyDisplay(session.variance)}</div>
+            <div className="register-report-value" data-closed-variance="">Variance {formatSignedMoneyDisplay(session.variance)}</div>
           ) : null}
         </section>
       ) : null}
       {session.report && session.status === "closed" && session.report.kind === "Z" && session.reportPhase !== "loading" && session.reportPhase !== "error" && session.reportPhase !== "empty" ? (
-        <section className="card card-pad" data-z-report="">
+        <section className="card card-pad register-report" data-z-report="">
           <strong>End-of-shift report (Z report)</strong>
-          <div>Expected {formatMoneyDisplay(session.report.expectedCash)}</div>
-          {session.report.countedCash ? <div>Counted {formatMoneyDisplay(session.report.countedCash)}</div> : null}
-          {session.report.variance ? <div>Variance {formatSignedMoneyDisplay(session.report.variance)}</div> : null}
+          <div className="register-report-value">Expected {formatMoneyDisplay(session.report.expectedCash)}</div>
+          {session.report.countedCash ? <div className="register-report-value">Counted {formatMoneyDisplay(session.report.countedCash)}</div> : null}
+          {session.report.variance ? <div className="register-report-value">Variance {formatSignedMoneyDisplay(session.report.variance)}</div> : null}
         </section>
       ) : null}
     </div>

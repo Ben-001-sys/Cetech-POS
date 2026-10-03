@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { ManagementLocation } from "../../server/admin/management-topology-directory";
+import { ManagementLoading } from "./ManagementLoading";
 
 export type TopologyChange =
   | {
@@ -44,10 +45,10 @@ export function TopologyPanel({
   readonly onSave?: (change: TopologyChange) => void;
 }) {
   if (loading) {
-    return <section className="card card-pad"><p>Loading {mode}…</p></section>;
+    return <ManagementLoading message={`Loading ${mode}…`} />;
   }
   if (errorMessage) {
-    return <section className="card card-pad"><div className="banner danger">{errorMessage}</div></section>;
+    return <section className="card card-pad"><div className="banner danger" role="alert">{errorMessage}</div></section>;
   }
   if (rows.length === 0 && !canManage) {
     return <section className="card card-pad"><p>No {mode} are visible in your management access.</p></section>;
@@ -61,11 +62,11 @@ export function TopologyPanel({
             {(draft) => (
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn primary"
                 disabled={saving || draft.trim().length === 0}
                 onClick={() => onSave({ kind: "location", name: draft, status: "active" })}
               >
-                Add location
+                {saving ? "Saving…" : "Add location"}
               </button>
             )}
           </CreateCard>
@@ -182,11 +183,11 @@ function CreateCard({
 }) {
   const [draft, setDraft] = useState("");
   return (
-    <section className="card card-pad stack">
+    <section className="card card-pad stack management-topology-create" aria-busy={saving}>
       <h2>{title}</h2>
-      <label className="stack">
+      <label className="field">
         Name
-        <input value={draft} onChange={(event) => setDraft(event.target.value)} disabled={saving} />
+        <input className="input" value={draft} onChange={(event) => setDraft(event.target.value)} disabled={saving} />
       </label>
       {children(draft)}
     </section>
@@ -206,24 +207,25 @@ function LocationEditor({
   const [status, setStatus] = useState<"active" | "inactive">(location.status === "inactive" ? "inactive" : "active");
   return (
     <form
-      className="stack"
+      className="management-topology-form"
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         onSave({ kind: "location", locationId: location.id, name, status });
       }}
     >
-      <label className="stack">
+      <label className="field">
         Location name
-        <input value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
+        <input className="input" value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
       </label>
-      <label className="stack">
+      <label className="field">
         Status
-        <select value={status} onChange={(event) => setStatus(event.target.value === "inactive" ? "inactive" : "active")} disabled={saving}>
+        <select className="input" value={status} onChange={(event) => setStatus(event.target.value === "inactive" ? "inactive" : "active")} disabled={saving}>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
       </label>
-      <button type="submit" className="btn" disabled={saving || name.trim().length === 0}>Save location</button>
+      <button type="submit" className="btn" disabled={saving || name.trim().length === 0}>{saving ? "Saving…" : "Save location"}</button>
     </form>
   );
 }
@@ -242,7 +244,8 @@ function RegisterCreate({
   const [currency, setCurrency] = useState("GHS");
   return (
     <form
-      className="card card-pad stack"
+      className="card card-pad management-topology-form"
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         onSave({ kind: "register", locationId, name, currency, status: "active" });
@@ -250,23 +253,23 @@ function RegisterCreate({
       }}
     >
       <h2>Add register</h2>
-      <label className="stack">
+      <label className="field">
         Location
-        <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
+        <select className="input" value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
           {rows.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
         </select>
       </label>
-      <label className="stack">
+      <label className="field">
         Register name
-        <input value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
+        <input className="input" value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
       </label>
-      <label className="stack">
+      <label className="field">
         Currency
-        <input value={currency} maxLength={3} onChange={(event) => setCurrency(event.target.value.toUpperCase())} disabled={saving} />
+        <input className="input" value={currency} maxLength={3} onChange={(event) => setCurrency(event.target.value.toUpperCase())} disabled={saving} />
       </label>
       <p className="muted">Currency cannot be changed after the register is created.</p>
-      <button type="submit" className="btn btn-primary" disabled={saving || !locationId || name.trim().length === 0 || !/^[A-Z]{3}$/.test(currency)}>
-        Add register
+      <button type="submit" className="btn primary" disabled={saving || !locationId || name.trim().length === 0 || !/^[A-Z]{3}$/.test(currency)}>
+        {saving ? "Saving…" : "Add register"}
       </button>
     </form>
   );
@@ -287,25 +290,26 @@ function RegisterEditor({
   const [status, setStatus] = useState(register.status);
   return (
     <form
-      className="stack"
+      className="management-topology-form"
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         onSave({ kind: "register", registerId: register.id, locationId, name, status });
       }}
     >
-      <label className="stack">
+      <label className="field">
         Register name
-        <input value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
+        <input className="input" value={name} onChange={(event) => setName(event.target.value)} disabled={saving} />
       </label>
-      <label className="stack">
+      <label className="field">
         Status
-        <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} disabled={saving}>
+        <select className="input" value={status} onChange={(event) => setStatus(event.target.value as typeof status)} disabled={saving}>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
           <option value="maintenance">Maintenance</option>
         </select>
       </label>
-      <button type="submit" className="btn" disabled={saving || name.trim().length === 0}>Save register</button>
+      <button type="submit" className="btn" disabled={saving || name.trim().length === 0}>{saving ? "Saving…" : "Save register"}</button>
     </form>
   );
 }
@@ -323,7 +327,8 @@ function DeviceCreate({
   const [label, setLabel] = useState("");
   return (
     <form
-      className="card card-pad stack"
+      className="card card-pad management-topology-form"
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         onSave({ kind: "device", locationId, label, status: "active" });
@@ -331,17 +336,17 @@ function DeviceCreate({
       }}
     >
       <h2>Add device</h2>
-      <label className="stack">
+      <label className="field">
         Location
-        <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
+        <select className="input" value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={saving}>
           {rows.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
         </select>
       </label>
-      <label className="stack">
+      <label className="field">
         Device name
-        <input value={label} onChange={(event) => setLabel(event.target.value)} disabled={saving} />
+        <input className="input" value={label} onChange={(event) => setLabel(event.target.value)} disabled={saving} />
       </label>
-      <button type="submit" className="btn btn-primary" disabled={saving || !locationId || label.trim().length === 0}>Add device</button>
+      <button type="submit" className="btn primary" disabled={saving || !locationId || label.trim().length === 0}>{saving ? "Saving…" : "Add device"}</button>
     </form>
   );
 }
@@ -364,30 +369,31 @@ function DeviceEditor({
   const [status, setStatus] = useState(device.status);
   return (
     <form
-      className="stack"
+      className="management-topology-form"
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         onSave({ kind: "device", deviceId: device.id, locationId: nextLocationId, label, status });
       }}
     >
-      <label className="stack">
+      <label className="field">
         Device name
-        <input value={label} onChange={(event) => setLabel(event.target.value)} disabled={saving} />
+        <input className="input" value={label} onChange={(event) => setLabel(event.target.value)} disabled={saving} />
       </label>
-      <label className="stack">
+      <label className="field">
         Location
-        <select value={nextLocationId} onChange={(event) => setNextLocationId(event.target.value)} disabled={saving}>
+        <select className="input" value={nextLocationId} onChange={(event) => setNextLocationId(event.target.value)} disabled={saving}>
           {rows.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
         </select>
       </label>
-      <label className="stack">
+      <label className="field">
         Status
-        <select value={status} onChange={(event) => setStatus(event.target.value === "inactive" ? "inactive" : "active")} disabled={saving}>
+        <select className="input" value={status} onChange={(event) => setStatus(event.target.value === "inactive" ? "inactive" : "active")} disabled={saving}>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
       </label>
-      <button type="submit" className="btn" disabled={saving || label.trim().length === 0}>Save device</button>
+      <button type="submit" className="btn" disabled={saving || label.trim().length === 0}>{saving ? "Saving…" : "Save device"}</button>
     </form>
   );
 }
