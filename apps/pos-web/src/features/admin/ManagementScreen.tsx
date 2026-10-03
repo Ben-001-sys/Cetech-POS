@@ -35,7 +35,7 @@ const LABELS: Record<ManagementSection, { label: string; description: string }> 
   policies: { label: "Operational rules", description: "Shift-closing and return-approval rules by organization, location and register." },
   receipt_settings: {
     label: "Receipt settings",
-    description: "Receipt product-name and SKU display by location.",
+    description: "Receipt branding and presentation by location.",
   },
 };
 

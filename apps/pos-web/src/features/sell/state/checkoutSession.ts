@@ -1,3 +1,5 @@
+import type { ReceiptPresentation } from "../../../../../../docs/contracts/domain.generated";
+
 /**
  * FE-05 checkout presentation view-model.
  * Discriminants describe cashier-visible stages; they are not CheckoutUseCases.
@@ -35,6 +37,8 @@ export type ReceiptViewModel = {
   readonly registerName: string;
   readonly cashierName: string;
   readonly customerLabel: string;
+  readonly customerPhone?: string;
+  readonly presentation?: ReceiptPresentation;
   readonly lines: readonly ReceiptLineView[];
   readonly subtotal: CheckoutMoneyView;
   readonly discount: CheckoutMoneyView;

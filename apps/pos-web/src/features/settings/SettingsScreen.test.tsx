@@ -11,6 +11,14 @@ const settings: PosSettingsView = {
 };
 
 describe("SettingsScreen", () => {
+  test("offers printer paper sizing as a local device preference with 80mm default", () => {
+    const html = renderToStaticMarkup(<SettingsScreen settings={settings} onPaperWidthChange={() => undefined} />);
+    expect(html).toContain("Receipt paper width");
+    expect(html).toContain('<option value="80" selected="">80 mm</option>');
+    expect(html).toContain("Saved on this device");
+    const narrow = renderToStaticMarkup(<SettingsScreen settings={settings} paperWidth={58} onPaperWidthChange={() => undefined} />);
+    expect(narrow).toContain('<option value="58" selected="">58 mm</option>');
+  });
   test("renders operational settings without engineering diagnostics", () => {
     const html = renderToStaticMarkup(<SettingsScreen settings={settings} onOpenStoreHealth={() => undefined} />);
     expect(html).toContain("Device &amp; register");

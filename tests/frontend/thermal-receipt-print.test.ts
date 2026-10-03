@@ -17,6 +17,10 @@ const checkout = readFileSync(
   new URL("../../apps/pos-web/src/app/checkout-client.ts", import.meta.url),
   "utf8",
 );
+const printPreparation = readFileSync(
+  new URL("../../apps/pos-web/src/core/receipt/printer-preference.ts", import.meta.url),
+  "utf8",
+);
 
 describe("BUG #85 thermal browser receipt printing", () => {
   test("browser print removes the POS shell from layout and exposes an 80mm receipt only", () => {
@@ -42,7 +46,9 @@ describe("BUG #85 thermal browser receipt printing", () => {
     expect(sellRuntime).toContain("flushSync(() =>");
     expect(sellRuntime).toContain("setPrintReceipt(receipt)");
     expect(sellRuntime).toContain("printReceipt ?");
-    expect(checkout).toContain("window.print()");
+    expect(checkout).toContain("await printMountedReceipt(document, undefined, input.receiptId)");
+    expect(printPreparation).toContain("view.print()");
+    expect(printPreparation).toContain('view.addEventListener("afterprint", afterPrinted)');
   });
 
   test("Orders reprint mounts the immutable receipt snapshot before window.print", () => {

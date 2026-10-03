@@ -719,7 +719,15 @@ Owner/Admin can control:
 - **Maximum product-name characters**;
 - **Show SKU on receipts**.
 
+The receipt upgrade also adds business name, an uploaded PNG/JPEG logo, address, contact phone, tax registration number, footer message, and options to show customer name, available customer phone and cashier name. Blank optional details are omitted. These controls format the receipt; they do not change sale prices, taxes or payment amounts.
+
+Use **Live receipt preview** to see unsaved changes. **Test print (sample)** prints a clearly marked example and does not create a sale, payment or stock movement. Save when the preview is correct. Managers can inspect the settings and sample but cannot change the location's receipt configuration.
+
+In cashier **Settings**, choose the **Printer paper width on this device** to match the printer: 80 mm or 58 mm. This choice is saved on that device/browser; it does not change another register's printer. Match the printer driver's paper setting too. Browser print preview and a successful physical print are separate checks.
+
 These settings affect future receipts. They do not change the catalog product name.
+
+New receipts use numbered item rows with quantity, unit price and line total. Cash received and Change are shown for cash payments. Saved receipts keep their original business details, logo, customer presentation and footer when reprinted after settings change. Older receipts retain their earlier layout. Available customer phone presentation may be masked by the customer source; the POS does not invent missing digits.
 
 Managers may have read-only visibility depending on authorization.
 

@@ -163,7 +163,8 @@ function validate(schema: SchemaNode, value: unknown): boolean {
     }
     const minLength = schema.minLength ?? 0;
     const maxLength = schema.maxLength ?? Number.POSITIVE_INFINITY;
-    if (value.length < minLength || value.length > maxLength) {
+    const characterCount = Array.from(value).length;
+    if (characterCount < minLength || characterCount > maxLength) {
       return false;
     }
     return schema.pattern === undefined || matchesPattern(schema.pattern, value);

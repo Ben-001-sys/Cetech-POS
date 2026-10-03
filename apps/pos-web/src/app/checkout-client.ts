@@ -439,12 +439,21 @@ export function createBrowserReceiptPort(options: BrowserCheckoutOptions = {}): 
 
 export function createBrowserPrintPort(): PrintPort {
   return {
-    async print(): Promise<PrintResult> {
+    async print(input): Promise<PrintResult> {
       if (typeof window === "undefined" || typeof window.print !== "function") {
         return { status: "unsupported", message: "Printing is not available in this session." };
       }
-      window.print();
-      return { status: "dialog_opened", message: "Print dialog opened." };
+      const paper = document.querySelector<HTMLElement>(".receipt-print-host .receipt-paper");
+      if (!paper || paper.dataset.receiptId !== input.receiptId) {
+        return { status: "failed", message: "Receipt is not ready to print. Open it and try again." };
+      }
+      try {
+        const { printMountedReceipt } = await import("../core/receipt/printer-preference");
+        await printMountedReceipt(document, undefined, input.receiptId);
+        return { status: "dialog_opened", message: "Print dialog opened." };
+      } catch {
+        return { status: "failed", message: "Receipt could not be printed. Check the printer and try again." };
+      }
     },
   };
 }

@@ -1,5 +1,9 @@
 # Decision register
 
+| ID | Decision | Status | Date | Rationale | Supersedes | Contracts | Workstreams |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [ADR-018](ADR/018.md) | Reference receipt layout, bounded branding/display settings and local paper preference | CURRENT owner implementation decision | 2026-10-03 | Match the supplied thermal receipt while preserving immutable snapshots and transaction truth | New-receipt fixed visual template only | Optional ReceiptPresentation and ReceiptSnapshot.customerPhone; legacy payloads remain valid | WS3 with bounded WS1 lease |
+
 Current baseline established 2026-09-11 under explicit bootstrap authorization. Status is design authority, not deployment evidence.
 
 | ID | Decision | Status | Date | Rationale | Supersedes | Contracts | Workstreams |

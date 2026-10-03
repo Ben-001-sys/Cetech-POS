@@ -907,17 +907,26 @@ Record the retry part as **COULD NOT TEST** if no failed check or retry button i
 
 ---
 
-## T63 — Receipt name/SKU settings
+## T63 — Receipt presentation, preview and printer settings
 
 Owner/Admin changes; Manager view-only.
 
 **Do:** In Management → Receipt settings, use a safe test location and adjust settings as authorized.
+
+Preview a business name/address/footer change before saving. Upload a small valid PNG/JPEG logo if available. Try the customer/cashier display choices. Use **Test print (sample)**, then match **Printer paper width on this device** to the physical printer. After saving, use a separately agreed new sale to check the actual receipt. Change a presentation setting and reprint that completed receipt to check preservation. Restore shared settings after coordinated testing.
 
 **Expected:**
 - shortening changes future receipt display only;
 - catalog product name stays unchanged;
 - Show SKU affects receipt presentation;
 - historic receipts remain unchanged.
+- unsaved branding changes appear in the preview; sample printing is clearly marked and creates no sale/payment/stock effect;
+- Owner/Admin can save; Manager can inspect but cannot change the location configuration;
+- new receipts show numbered items, quantity, separate unit price, line totals and correct payment details;
+- blank optional fields are omitted; customer phone is shown only when available and enabled;
+- reprints preserve the completed receipt's logo, header, footer and customer presentation after later settings changes;
+- 80 mm/58 mm paper preference persists on this device and does not change other devices;
+- a physical print has readable text, aligned amounts and no clipped rows. Record physical hardware evidence separately from browser preview.
 
 ### Your result
 

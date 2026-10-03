@@ -870,3 +870,110 @@ describe("receipt product-name snapshot", () => {
     expect(await innerStore.getSale(TX)).toBeUndefined();
   });
 });
+
+async function preparePaidReceiptRuntime(settings: ReceiptSettings, phone?: string) {
+  const runtime = await seedRuntime(settings);
+  const customerSnapshot = phone === undefined ? undefined : {
+    id: "customer_1", kind: "retail" as const, displayName: "Customer Original", phoneMasked: phone,
+  };
+  if (customerSnapshot) {
+    await runtime.store.saveQuote({ ...quote(), customer: { kind: "retail", customerId: customerSnapshot.id } });
+  }
+  const prepared = await prepareSale({
+    store: runtime.store, salesPort: runtime.salesPort, catalogLookup: runtime.catalogLookup, actor: ACTOR,
+    request: { transactionId: TX, registerId: "reg_a1", shiftId: SHIFT, deviceId: DEVICE,
+      quoteId: "quote-receipt-1", quoteFingerprint: FINGERPRINT,
+      ...(customerSnapshot ? { customerSnapshot } : {}),
+    },
+    context: { idempotencyKey: PREPARE_KEY, correlationId: CORRELATION }, now: NOW,
+  });
+  if (!prepared.ok) throw new Error("expected prepare");
+  const cash = await confirmCash({
+    store: runtime.store, actor: ACTOR, request: { transactionId: TX, cashReceived: ghs(4000) },
+    context: { idempotencyKey: CASH_KEY, correlationId: CORRELATION }, now: NOW,
+  });
+  if (!cash.ok) throw new Error("expected cash");
+  return { ...runtime, paymentId: cash.data.paymentId, customerSnapshot };
+}
+
+describe("versioned reference receipt snapshot", () => {
+  test("freezes configured presentation and existing masked customer phone without a later live lookup", async () => {
+    const presentation = { templateVersion: 1 as const, businessName: "CETECH Tema", footerMessage: "Original footer", showCashier: false };
+    const settings = { ...DEFAULT_RECEIPT_SETTINGS, presentation };
+    const runtime = await preparePaidReceiptRuntime(settings, "024 *** 1234");
+    const result = await finalizeSale({
+      ...runtime, actor: ACTOR,
+      receiptSettings: { ...runtime.receiptSettings, async get() { return settings; } },
+      request: { transactionId: TX, paymentId: runtime.paymentId },
+      context: { idempotencyKey: FINALIZE_KEY, correlationId: CORRELATION }, now: NOW,
+    });
+    expect(result.ok && result.data.status).toBe("completed");
+    const stored = await runtime.store.getReceipt(TX);
+    expect(stored?.presentation).toMatchObject({ templateVersion: 1, businessName: "CETECH Tema", footerMessage: "Original footer", showCashier: false, showCustomerPhone: true });
+    expect(stored?.presentation).not.toBe(presentation);
+    expect(stored?.customerPhone).toBe("024 *** 1234");
+    expect(stored?.customerLabel).toBe("Customer Original");
+    expect(validateCanonicalDef("ReceiptSnapshot", stored)).toBe(true);
+    const frozen = structuredClone(stored);
+    presentation.businessName = "Changed business";
+    presentation.footerMessage = "Changed footer";
+    Object.assign(runtime.customerSnapshot!, { phoneMasked: "Changed phone", displayName: "Changed customer" });
+    await runtime.receiptSettings.upsert("org_a", "loc_a1", { ...DEFAULT_RECEIPT_SETTINGS, presentation });
+    const reprint = await getReceiptByTransaction({ store: runtime.store, actor: ACTOR, transactionId: TX, context: { correlationId: CORRELATION } });
+    expect(reprint.ok && reprint.data).toEqual(frozen);
+    const finalizedAgain = await finalizeSale({
+      ...runtime, actor: ACTOR,
+      receiptSettings: { ...runtime.receiptSettings, async get() { throw new Error("must not read live settings"); } },
+      request: { transactionId: TX, paymentId: runtime.paymentId },
+      context: { idempotencyKey: FINALIZE_KEY_2, correlationId: CORRELATION }, now: NOW,
+    });
+    expect(finalizedAgain.ok && finalizedAgain.data.status).toBe("completed");
+    expect(await runtime.store.getReceipt(TX)).toEqual(frozen);
+  });
+
+  test("new sales without configured branding freeze defaults and omit unavailable phone", async () => {
+    const runtime = await preparePaidReceiptRuntime(DEFAULT_RECEIPT_SETTINGS);
+    const result = await finalizeSale({ ...runtime, actor: ACTOR,
+      request: { transactionId: TX, paymentId: runtime.paymentId },
+      context: { idempotencyKey: FINALIZE_KEY, correlationId: CORRELATION }, now: NOW,
+    });
+    expect(result.ok && result.data.status).toBe("completed");
+    const stored = await runtime.store.getReceipt(TX);
+    expect(stored?.presentation).toEqual({ templateVersion: 1, businessName: "CETECH", footerMessage: "Thank You For Purchasing", showCustomerName: true, showCustomerPhone: true, showCashier: true });
+    expect(stored).not.toHaveProperty("customerPhone");
+  });
+
+  test("available phone presentation is bounded to eighty characters", async () => {
+    const runtime = await preparePaidReceiptRuntime(DEFAULT_RECEIPT_SETTINGS, "0".repeat(100));
+    const result = await finalizeSale({ ...runtime, actor: ACTOR,
+      request: { transactionId: TX, paymentId: runtime.paymentId },
+      context: { idempotencyKey: FINALIZE_KEY, correlationId: CORRELATION }, now: NOW,
+    });
+    expect(result.ok && result.data.status).toBe("completed");
+    expect((await runtime.store.getReceipt(TX))?.customerPhone).toBe("0".repeat(80));
+  });
+});
+
+test("a stored legacy receipt stays versionless during finalize recovery and reprint", async () => {
+  const runtime = await preparePaidReceiptRuntime(DEFAULT_RECEIPT_SETTINGS);
+  const sale = await runtime.store.getSale(TX);
+  if (!sale) throw new Error("expected sale");
+  const legacy = {
+    id: "rcpt-legacy-frozen", transactionId: TX, receiptNumber: "POS-legacy", orderReference: sale.prepared.orderReference,
+    issuedAt: NOW.toISOString(), locationName: sale.locationName, registerName: sale.registerName,
+    cashierName: sale.cashierName, customerLabel: sale.customerLabel, lines: sale.lines,
+    subtotal: sale.subtotal, discount: sale.discount, tax: sale.tax, total: sale.prepared.total,
+    tender: "cash" as const, documentKind: "operational_pos_receipt" as const,
+  };
+  await runtime.store.saveReceipt(legacy);
+  const result = await finalizeSale({ ...runtime, actor: ACTOR,
+    receiptSettings: { ...runtime.receiptSettings, async get() { throw new Error("legacy receipt must not read current settings"); } },
+    request: { transactionId: TX, paymentId: runtime.paymentId },
+    context: { idempotencyKey: FINALIZE_KEY, correlationId: CORRELATION }, now: NOW,
+  });
+  expect(result.ok && result.data.status).toBe("completed");
+  const reprint = await getReceiptByTransaction({ store: runtime.store, actor: ACTOR, transactionId: TX, context: { correlationId: CORRELATION } });
+  expect(reprint.ok && reprint.data).toEqual(legacy);
+  expect(reprint.ok && reprint.data).not.toHaveProperty("presentation");
+  expect(reprint.ok && reprint.data).not.toHaveProperty("customerPhone");
+});

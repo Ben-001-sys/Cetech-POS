@@ -1,5 +1,5 @@
 import type { ReceiptSettings } from "../../../../../docs/contracts/domain.generated";
-import { DEFAULT_RECEIPT_SETTINGS, isReceiptSettings } from "./settings";
+import { DEFAULT_RECEIPT_SETTINGS, copyReceiptSettings, isReceiptSettings, resolveReceiptPresentation } from "./settings";
 
 export interface ReceiptSettingsStore {
   get(organizationId: string, locationId: string): Promise<ReceiptSettings>;
@@ -23,21 +23,30 @@ export function createMemoryReceiptSettingsStore(
 ): MutableReceiptSettingsStore {
   const rows = new Map<string, ReceiptSettings>();
   for (const row of initial) {
-    rows.set(settingsKey(row.organizationId, row.locationId), row.settings);
+    if (!isReceiptSettings(row.settings)) throw new Error("receipt settings are invalid");
+    rows.set(settingsKey(row.organizationId, row.locationId), copyReceiptSettings(row.settings));
   }
   return {
     seed(organizationId, locationId, settings) {
-      rows.set(settingsKey(organizationId, locationId), settings);
+      if (!isReceiptSettings(settings)) throw new Error("receipt settings are invalid");
+      rows.set(settingsKey(organizationId, locationId), copyReceiptSettings(settings));
     },
     async get(organizationId, locationId) {
-      return rows.get(settingsKey(organizationId, locationId)) ?? DEFAULT_RECEIPT_SETTINGS;
+      return copyReceiptSettings(rows.get(settingsKey(organizationId, locationId)) ?? DEFAULT_RECEIPT_SETTINGS);
     },
     async upsert(organizationId, locationId, settings) {
       if (!isReceiptSettings(settings)) {
         throw new Error("receipt settings are invalid");
       }
-      rows.set(settingsKey(organizationId, locationId), settings);
-      return settings;
+      const existing = rows.get(settingsKey(organizationId, locationId));
+      const saved = copyReceiptSettings({
+        ...settings,
+        ...(settings.presentation !== undefined ? { presentation: resolveReceiptPresentation(settings.presentation) } : {}),
+        ...(settings.presentation === undefined && existing?.presentation !== undefined
+          ? { presentation: existing.presentation } : {}),
+      });
+      rows.set(settingsKey(organizationId, locationId), saved);
+      return copyReceiptSettings(saved);
     },
   };
 }

@@ -6,6 +6,7 @@ import type {
   ReceiptSnapshot,
   SaleResolution,
 } from "../../../../../docs/contracts/domain.generated";
+import { resolveReceiptPresentation } from "../../core/receipt/settings";
 import { freezeReceiptLines } from "../../core/receipt/build-receipt-line";
 import type { ReceiptSettingsStore } from "../../core/receipt/settings-store";
 import { canonicalJson, sha256Hex } from "../../local/canonical";
@@ -330,6 +331,10 @@ function buildReceipt(
     registerName: sale.registerName,
     cashierName: sale.cashierName,
     customerLabel: sale.customerLabel,
+    ...(sale.customerSnapshot?.phoneMasked?.trim()
+      ? { customerPhone: Array.from(sale.customerSnapshot.phoneMasked.trim()).slice(0, 80).join("") }
+      : {}),
+    presentation: resolveReceiptPresentation(settings.presentation),
     lines: freezeReceiptLines(sale.lines, settings),
     subtotal: sale.subtotal,
     discount: sale.discount,

@@ -12,6 +12,13 @@ type Fixture = {
 };
 
 describe("canonical v1 JSON Schema evaluator", () => {
+  test("receipt presentation bounds count Unicode characters and keep legacy settings valid", () => {
+    expect(validateCanonicalDef("ReceiptPresentation", { templateVersion: 1, businessName: "🎨".repeat(80) })).toBe(true);
+    expect(validateCanonicalDef("ReceiptPresentation", { templateVersion: 1, businessName: "🎨".repeat(81) })).toBe(false);
+    expect(validateCanonicalDef("ReceiptPresentation", { templateVersion: 2 })).toBe(false);
+    expect(validateCanonicalDef("ReceiptPresentation", { templateVersion: 1, logoDataUrl: "https://example.test/logo.png" })).toBe(false);
+    expect(validateCanonicalDef("ReceiptSettings", { shortenProductNames: false, productNameMaxCharacters: 40, showSku: false })).toBe(true);
+  });
   test("reads QuoteRequest/Quote from the frozen schema file, not a duplicate shape", () => {
     const quoteRequest = domainSchema.$defs.QuoteRequest;
     const quote = domainSchema.$defs.Quote;

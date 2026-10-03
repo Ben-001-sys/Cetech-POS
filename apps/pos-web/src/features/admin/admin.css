@@ -703,6 +703,55 @@
   min-width: 0;
 }
 
+.receipt-settings-editor,
+.receipt-settings-fields,
+.receipt-settings-preview {
+  min-width: 0;
+}
+
+.receipt-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.receipt-settings-fields textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.receipt-settings-fields input[type="file"] {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.receipt-settings-preview {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+
+.receipt-settings-preview h3,
+.receipt-settings-preview p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.receipt-settings-preview-paper {
+  padding: 12px 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.receipt-settings-preview-paper .receipt-paper {
+  max-width: 100%;
+  margin: 0;
+}
+
 .receipt-settings-head {
   display: flex;
   flex-wrap: wrap;
@@ -752,6 +801,12 @@
 @media (max-width: 640px) {
   .receipt-settings-toggle {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .receipt-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

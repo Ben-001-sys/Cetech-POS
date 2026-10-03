@@ -93,6 +93,8 @@ export function mapReceiptSnapshot(snapshot: ReceiptSnapshot): ReceiptViewModel 
     registerName: customerReceiptPlaceLabel(snapshot.registerName, "Register"),
     cashierName: snapshot.cashierName,
     customerLabel: snapshot.customerLabel,
+    ...(snapshot.customerPhone ? { customerPhone: snapshot.customerPhone } : {}),
+    ...(snapshot.presentation ? { presentation: snapshot.presentation } : {}),
     lines: snapshot.lines.map((line) => ({
       name: line.displayName ?? line.name,
       sku: line.sku,

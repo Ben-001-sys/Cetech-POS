@@ -1,5 +1,5 @@
 import type { ReceiptSettings } from "../../../../../docs/contracts/domain.generated";
-import { DEFAULT_RECEIPT_SETTINGS, isReceiptSettings } from "../../core/receipt/settings";
+import { DEFAULT_RECEIPT_SETTINGS, copyReceiptSettings, isReceiptSettings, resolveReceiptPresentation } from "../../core/receipt/settings";
 import type { ReceiptSettingsStore } from "../../core/receipt/settings-store";
 import { validateCanonicalDef } from "../quotes/canonical-schema";
 import type { PosRestFetch } from "../http/server-fetch";
@@ -15,17 +15,18 @@ const DEFAULT_TIMEOUT_MS = 8_000;
 
 function parseSettings(row: Record<string, unknown> | undefined): ReceiptSettings {
   if (!row) {
-    return DEFAULT_RECEIPT_SETTINGS;
+    return copyReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
   }
   const candidate = {
     shortenProductNames: row.shorten_product_names,
     productNameMaxCharacters: row.product_name_max_characters,
     showSku: row.show_sku,
+    ...(row.presentation == null ? {} : { presentation: row.presentation }),
   };
   if (!validateCanonicalDef("ReceiptSettings", candidate) || !isReceiptSettings(candidate)) {
-    return DEFAULT_RECEIPT_SETTINGS;
+    return copyReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
   }
-  return candidate;
+  return copyReceiptSettings(candidate);
 }
 
 export function createSupabaseReceiptSettingsStore(
@@ -69,14 +70,14 @@ export function createSupabaseReceiptSettingsStore(
       const path =
         `pos_receipt_settings?organization_id=eq.${encodeURIComponent(organizationId)}` +
         `&location_id=eq.${encodeURIComponent(locationId)}` +
-        `&select=shorten_product_names,product_name_max_characters,show_sku`;
+        `&select=shorten_product_names,product_name_max_characters,show_sku,presentation`;
       const result = await request({ path, method: "GET" });
       if (!result.status || result.status >= 400) {
         throw new Error("receipt settings store is unavailable");
       }
       const row = Array.isArray(result.body) ? result.body[0] : undefined;
       if (!row || typeof row !== "object") {
-        return DEFAULT_RECEIPT_SETTINGS;
+        return copyReceiptSettings(DEFAULT_RECEIPT_SETTINGS);
       }
       return parseSettings(row as Record<string, unknown>);
     },
@@ -94,6 +95,7 @@ export function createSupabaseReceiptSettingsStore(
           shorten_product_names: settings.shortenProductNames,
           product_name_max_characters: settings.productNameMaxCharacters,
           show_sku: settings.showSku,
+          ...(settings.presentation === undefined ? {} : { presentation: resolveReceiptPresentation(settings.presentation) }),
           updated_at: new Date().toISOString(),
         },
       });
@@ -102,7 +104,7 @@ export function createSupabaseReceiptSettingsStore(
       }
       const row = Array.isArray(result.body) ? result.body[0] : result.body;
       if (!row || typeof row !== "object") {
-        return settings;
+        return copyReceiptSettings(settings);
       }
       return parseSettings(row as Record<string, unknown>);
     },

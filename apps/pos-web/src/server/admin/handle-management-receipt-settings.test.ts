@@ -3,7 +3,7 @@ import type { ReceiptSettings, Session } from "../../../../../docs/contracts/dom
 import type { PosRestFetch } from "../http/server-fetch";
 import { createMemoryAssignmentDirectory } from "../auth/assignments";
 import { createEphemeralInMemoryStaffSessionStore } from "../auth/session-store";
-import { DEFAULT_RECEIPT_SETTINGS } from "../../core/receipt/settings";
+import { DEFAULT_RECEIPT_SETTINGS, resolveReceiptPresentation } from "../../core/receipt/settings";
 import { createMemoryControlPlaneDirectory } from "./control-plane-directory";
 import {
   handleGetManagementReceiptSettings,
@@ -401,5 +401,64 @@ describe("ADMIN-105 receipt settings supabase boundary", () => {
     });
     expect(calls.some((call) => call.includes("/rpc/pos_admin_set_receipt_settings"))).toBe(true);
     expect(calls.some((call) => call.includes("pos_receipt_settings") && call.startsWith("POST"))).toBe(false);
+  });
+});
+
+
+describe("reference receipt presentation administration", () => {
+  test("owner settings preserve branding and audit copies across older writes and caller mutation", async () => {
+    const { sessions, cookieHeader } = await cookieFor("owner_a", []);
+    const receiptSettings = store();
+    const common = {
+      correlationId: CORRELATION, cookieHeader, now: NOW, sessions,
+      assignments: createMemoryAssignmentDirectory([]),
+      controlPlane: createMemoryControlPlaneDirectory([
+        { organizationId: "org_a", actorId: "owner_a", controlRole: "owner", status: "active" },
+      ]),
+      receiptSettings, locationId: "loc_a1", protection: protection(),
+    };
+    const presentation = { templateVersion: 1 as const, businessName: "CETECH Tema", showCustomerPhone: false };
+    const first = await handleSetManagementReceiptSettings({ ...common, settings: { ...SAVED, presentation } });
+    expect(first.ok).toBe(true);
+    presentation.businessName = "Mutated draft";
+    if (!first.ok) throw new Error("expected save");
+    Object.assign(first.data.settings.presentation!, { businessName: "Mutated response" });
+    const read = await handleGetManagementReceiptSettings(common);
+    expect(read.ok && read.data.settings.presentation?.businessName).toBe("CETECH Tema");
+    expect(receiptSettings.audits[0]?.after.presentation?.businessName).toBe("CETECH Tema");
+    const legacy = await handleSetManagementReceiptSettings({ ...common, settings: DEFAULT_RECEIPT_SETTINGS });
+    expect(legacy.ok && legacy.data.settings.presentation?.businessName).toBe("CETECH Tema");
+    expect(receiptSettings.audits[1]?.before?.presentation?.businessName).toBe("CETECH Tema");
+    const invalid = await handleSetManagementReceiptSettings({
+      ...common, settings: { ...SAVED, presentation: { templateVersion: 1, logoDataUrl: "https://example.test/logo.png" } },
+    });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.error.code).toBe("VALIDATION_ERROR");
+    expect(receiptSettings.audits).toHaveLength(2);
+  });
+
+  test("Supabase read and audited RPC carry normalized bounded presentation", async () => {
+    const presentation = resolveReceiptPresentation({ templateVersion: 1, businessName: "CETECH Tema", showCashier: false });
+    const calls: { url: string; body: Record<string, unknown> | undefined }[] = [];
+    const fetchImpl: PosRestFetch = async (url, init) => {
+      const body = init.body === undefined ? undefined : JSON.parse(init.body) as Record<string, unknown>;
+      calls.push({ url, body });
+      if (url.includes("pos_locations")) return { ok: true, status: 200, json: async () => [{ name: "Tema" }] };
+      if (url.includes("/rpc/")) return { ok: true, status: 200, json: async () => ({ ...SAVED, presentation }) };
+      return { ok: true, status: 200, json: async () => [{
+        shorten_product_names: SAVED.shortenProductNames,
+        product_name_max_characters: SAVED.productNameMaxCharacters,
+        show_sku: SAVED.showSku, presentation,
+      }] };
+    };
+    const directory = createSupabaseReceiptSettingsAdminStore({ url: "https://example.test", serviceRoleKey: "synthetic", fetchImpl });
+    const read = await directory.read({ organizationId: "org_a", locationId: "loc_a1" });
+    expect(read).toMatchObject({ settings: { ...SAVED, presentation }, persisted: true });
+    const saved = await directory.set({ organizationId: "org_a", locationId: "loc_a1", actorId: "owner_a", correlationId: CORRELATION,
+      settings: { ...SAVED, presentation: { templateVersion: 1, businessName: "CETECH Tema", showCashier: false } },
+    });
+    expect(saved).toMatchObject({ settings: { ...SAVED, presentation } });
+    expect(calls.find(call => call.url.includes("pos_receipt_settings"))?.url).toContain("show_sku,presentation");
+    expect(calls.find(call => call.url.includes("/rpc/"))?.body?.p_presentation).toEqual(presentation);
   });
 });

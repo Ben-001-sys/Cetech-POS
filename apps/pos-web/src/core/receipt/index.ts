@@ -13,6 +13,10 @@ export { formatReceiptDisplayName, RECEIPT_DISPLAY_NAME_ELLIPSIS } from "./displ
 export { resolveEffectiveSku } from "./effective-sku";
 export {
   DEFAULT_RECEIPT_SETTINGS,
+  DEFAULT_RECEIPT_PRESENTATION,
+  copyReceiptSettings,
+  isReceiptPresentation,
+  resolveReceiptPresentation,
   RECEIPT_PRODUCT_NAME_MAX_CHARACTERS_DEFAULT,
   RECEIPT_PRODUCT_NAME_MAX_CHARACTERS_MAX,
   RECEIPT_PRODUCT_NAME_MAX_CHARACTERS_MIN,

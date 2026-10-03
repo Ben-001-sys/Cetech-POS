@@ -2,8 +2,66 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { mapReceiptSnapshot } from "../runtime/cashCheckoutController";
 import { ReceiptPaper } from "./ReceiptPaper";
+import type { ReceiptViewModel } from "../state/checkoutSession";
+
+function referenceReceipt(overrides: Partial<ReceiptViewModel> = {}): ReceiptViewModel {
+  return {
+    id: "sample", transactionId: "11111111-1111-4111-8111-111111111111", receiptNumber: "POS-1001", orderReference: "1001",
+    issuedAt: "2026-10-03T01:00:00Z", locationName: "Accra Main Store", registerName: "Front Counter", cashierName: "Ama",
+    customerLabel: "Jane", customerPhone: "***1234", presentation: { templateVersion: 1, businessName: "CETECH Ghana", address: "First line\nSecond line", contactPhone: "0300000000", taxRegistrationNumber: "SAMPLE-TAX", footerMessage: "Come again" },
+    lines: [{ name: "Long frozen product name", sku: "SKU-FROZEN-123", variationLabel: "Colour: Magnolia — Size: 4L", quantity: "2", unitPrice: { minor: 2500, currency: "GHS" }, total: { minor: 5000, currency: "GHS" } }],
+    subtotal: { minor: 5000, currency: "GHS" }, discount: { minor: 100, currency: "GHS" }, tax: { minor: 0, currency: "GHS" }, total: { minor: 4900, currency: "GHS" },
+    tender: "cash", cashReceived: { minor: 5000, currency: "GHS" }, changeDue: { minor: 100, currency: "GHS" }, documentKind: "operational_pos_receipt",
+    ...overrides,
+  };
+}
 
 describe("ReceiptPaper", () => {
+  test("renders the reference template with numbered rows and frozen presentation only", () => {
+    const html = renderToStaticMarkup(<ReceiptPaper receipt={referenceReceipt()} paperWidth={58} />);
+    expect(html).toContain('data-receipt-template="1"');
+    expect(html).toContain('data-paper-width="58"');
+    expect(html).toContain("CETECH Ghana");
+    expect(html).toContain("Tax No: SAMPLE-TAX");
+    expect(html).toContain("Processed by: Ama");
+    expect(html).toContain("Name: Jane");
+    expect(html).toContain("Phone: ***1234");
+    expect(html).toContain('<th scope="col">SL</th>');
+    expect(html).toContain("Unit price: GHS 25.00");
+    expect(html).toContain("Colour: Magnolia — Size: 4L");
+    expect(html).toContain("SKU SKU-FROZEN-123");
+    expect(html).toContain("Cash received");
+    expect(html).toContain("Change");
+    expect(html).toContain("Come again");
+  });
+
+  test("defaults new versioned presentation, honors privacy flags and omits empty optional sections", () => {
+    const html = renderToStaticMarkup(<ReceiptPaper receipt={referenceReceipt({ customerLabel: "", customerPhone: undefined, presentation: { templateVersion: 1, showCashier: false } })} />);
+    expect(html).toContain("CETECH");
+    expect(html).toContain("Thank You For Purchasing");
+    expect(html).not.toContain("Processed by:");
+    expect(html).not.toContain("Customer Info");
+    expect(html).not.toContain("Phone:");
+    const privateHtml = renderToStaticMarkup(<ReceiptPaper receipt={referenceReceipt({ presentation: { templateVersion: 1, showCustomerName: false, showCustomerPhone: false, footerMessage: "" } })} />);
+    expect(privateHtml).not.toContain("Customer Info");
+    expect(privateHtml).not.toContain("receipt-footer");
+  });
+
+  test("limits cash fields to cash tender and marks a synthetic test print", () => {
+    const html = renderToStaticMarkup(<ReceiptPaper receipt={referenceReceipt({ tender: "mobile_money" })} sample />);
+    expect(html).toContain("Sample — not a sale");
+    expect(html).toContain("Mobile Money");
+    expect(html).not.toContain("Cash received");
+    expect(html).not.toContain(">Change<");
+  });
+
+  test("legacy receipts keep their original template and footer", () => {
+    const html = renderToStaticMarkup(<ReceiptPaper receipt={referenceReceipt({ presentation: undefined })} />);
+    expect(html).not.toContain("data-receipt-template");
+    expect(html).not.toContain("Unit price:");
+    expect(html).toContain("Thank you.");
+    expect(html).not.toContain("Come again");
+  });
   test("renders frozen receipt presentation settings and cashier-friendly labels", () => {
     const view = mapReceiptSnapshot({
       id: "receipt-1",

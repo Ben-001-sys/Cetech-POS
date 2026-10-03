@@ -13,6 +13,12 @@ import { receiptPaperIsMounted, reprintImmutableReceipt } from "../features/orde
 import { CustomersScreen } from "../features/customers";
 import { loadCustomerSearchPresentation } from "../features/customers/loadCustomerSearch";
 import { SettingsScreen, type AppearancePreference } from "../features/settings";
+import {
+  readReceiptPaperWidth,
+  writeReceiptPaperWidth,
+  RECEIPT_PAPER_WIDTH_EVENT,
+  type ReceiptPaperWidth,
+} from "../core/receipt/printer-preference";
 import { applyAppearance, readStoredAppearance } from "../features/settings/appearance";
 import {
   KEYBOARD_SCANNER_CAPABILITY,
@@ -88,6 +94,18 @@ export function ApprovedWorkspaceScreens({
   readonly onResolveAttention?: (item: AttentionItemView) => void;
   readonly recoveringItemId?: string | null;
 }) {
+  const [paperWidth, setPaperWidth] = useState<ReceiptPaperWidth>(80);
+  const [paperPreferenceError, setPaperPreferenceError] = useState<string | null>(null);
+  useEffect(() => {
+    const refresh = () => setPaperWidth(readReceiptPaperWidth());
+    refresh();
+    window.addEventListener(RECEIPT_PAPER_WIDTH_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(RECEIPT_PAPER_WIDTH_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
   if (route === "orders") {
     return (
       <OrdersWorkspace
@@ -113,18 +131,30 @@ export function ApprovedWorkspaceScreens({
   }
   if (route === "settings") {
     return (
-      <SettingsScreen
-        settings={{
-          deviceName: authority.shift?.deviceId ? "Assigned to current shift" : "Select a POS device when opening a register",
-          registerName: authority.register?.name ?? "No register assigned",
-          scannerLabel: KEYBOARD_SCANNER_CAPABILITY,
-          printerLabel: BROWSER_PRINT_CAPABILITY,
-          appearance,
-        }}
-        state={online ? "ready" : "offline"}
-        onAppearanceChange={onAppearanceChange}
-        onOpenStoreHealth={() => onNavigate("health")}
-      />
+      <>
+        <SettingsScreen
+          settings={{
+            deviceName: authority.shift?.deviceId ? "Assigned to current shift" : "Select a POS device when opening a register",
+            registerName: authority.register?.name ?? "No register assigned",
+            scannerLabel: KEYBOARD_SCANNER_CAPABILITY,
+            printerLabel: BROWSER_PRINT_CAPABILITY,
+            appearance,
+          }}
+          state={online ? "ready" : "offline"}
+          onAppearanceChange={onAppearanceChange}
+          paperWidth={paperWidth}
+          onPaperWidthChange={(width) => {
+            if (writeReceiptPaperWidth(width)) {
+              setPaperWidth(width);
+              setPaperPreferenceError(null);
+            } else {
+              setPaperPreferenceError("Paper width could not be saved on this device. The previous setting is still in use.");
+            }
+          }}
+          onOpenStoreHealth={() => onNavigate("health")}
+        />
+        {paperPreferenceError ? <p className="banner danger" role="alert">{paperPreferenceError}</p> : null}
+      </>
     );
   }
   if (route === "health") {

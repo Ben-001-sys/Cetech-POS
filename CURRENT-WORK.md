@@ -737,3 +737,37 @@ independent integration review: required before any integration/main merge
 Paths beginning `src/` or `e2e/` are relative to `apps/pos-web`. The consumer delegation is limited to the owner's urgent quote correction, not a transfer of general WS1 ownership. Upstream WordPress latency must remain open until live timings prove improvement. A timeout is not proof that pricing became fast.
 
 ---
+## RECEIPT-REF-01 — reference receipt layout and bounded settings — REVIEW HANDOFF
+
+Owner instructions on 2026-10-03: implement the receipt reference and accepted configuration recommendation; update the existing tester URL after qualification. This authorizes a bounded WS1 receipt/settings presentation reassignment to the senior implementing editor and the necessary WS3 schema, settings, immutable snapshot and print composition changes. It does not transfer general WS1 ownership. Current explicit owner instructions govern this new assignment over historical task prohibitions below.
+
+```text
+human / implementing editor: @wbdevworld
+workstream: WS3 + bounded WS1 receipt/settings surfaces
+task: RECEIPT-REF-01
+branch: ws3/receipt-layout-2026-10-03
+source baseline: ws3/quote-latency-2026-10-02 / 2c7eb2ddeb22c3402d82673421a54dbe6ad236f1
+declared integration baseline: integration/r9-staff-remediation-final / 1021cd113c783e25030fe9c0bda1be9ddcf5888c
+staging tester URL: https://cetech-pos-staging-git-integration-9578df-wbdevworlds-projects.vercel.app/
+allowed:
+  receipt settings schema/types, core settings and server persistence
+  additive receipt presentation migration and focused database tests
+  sale finalization receipt snapshot only
+  ReceiptPaper, receipt view mapping, sell receipt CSS
+  receipt Management editor and preview/test print
+  device printer paper preference and Settings binding
+  existing browser print adapter only
+  focused receipt tests, staff documentation, ADR/evidence and this ledger
+forbidden:
+  commerce pricing/payment/refund/stock/recovery changes
+  protected main or existing frozen PR #133 source edits
+  production promotion, VitePOS cutover, #102 incident disposition
+  destructive data cleanup or rewritten historical receipts
+review:
+  fresh exact-head CI and different competent human source review
+  staging rollout is authorized; production remains unauthorized
+```
+
+Receipt presentation settings remain location-scoped; paper width is a separate local printer preference. Snapshot content freezes presentation at completion and reads without live settings on reprint. Parallel contributors use isolated worktrees with non-overlapping scopes; the senior controls canonical schema generation and integration.
+
+Receipt source implementation and local combined verification are complete. Final remote candidate/CI/freshness and rollout state are recorded in the receipt PR handoff. Independent reviewer: @Ben-001-sys (approval pending). The staging alias remains on the previously approved pricing build until exact-head CI/review, additive staging migration, immutable Preview smoke and alias reassignment pass. All contributor worktree leases for this task are released after import.

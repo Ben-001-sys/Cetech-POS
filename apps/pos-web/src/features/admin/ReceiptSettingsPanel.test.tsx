@@ -34,6 +34,18 @@ describe("ReceiptSettingsPanel", () => {
     expect(html).toContain("Shorten product names on receipts");
     expect(html).toContain("Maximum product-name characters");
     expect(html).toContain("Show SKU on receipts");
+    expect(html).toContain("Business name");
+    expect(html).toContain("Business address");
+    expect(html).toContain("Contact phone");
+    expect(html).toContain("Tax registration number");
+    expect(html).toContain("Footer message");
+    expect(html).toContain('accept="image/png,image/jpeg"');
+    expect(html).toContain("Show customer name");
+    expect(html).toContain("Show customer phone");
+    expect(html).toContain("Show cashier name");
+    expect(html).toContain("Live receipt preview");
+    expect(html).toContain("Sample — not a sale");
+    expect(html).toContain("Test print (sample)");
     expect(html).toContain("Save receipt settings");
     expect(html).toContain("Editable");
     expect(html).toContain('data-layout="receipt-settings"');
@@ -41,7 +53,7 @@ describe("ReceiptSettingsPanel", () => {
     expect(html).toContain("Accra Main Store and Service Counter — North Ridge Industrial");
     expect(html).not.toContain("service_role");
     expect(html).not.toContain("truncate displayName");
-    expect(html).not.toContain("<table");
+    expect(html).toContain('aria-label="Purchased items"');
   });
 
   test("manager sees a read-only explanation and no save action", () => {
@@ -57,7 +69,8 @@ describe("ReceiptSettingsPanel", () => {
     expect(html).toContain("disabled");
     expect(html).not.toContain("Save receipt settings");
     expect(html).toContain("Location:");
-    expect(html).not.toContain("<select");
+    expect(html).toContain("Printer paper width on this device");
+    expect(html).toContain("Test print (sample)");
   });
 
   test("max character input accepts only whole numbers from 1 to 256", () => {
@@ -84,9 +97,29 @@ describe("ReceiptSettingsPanel", () => {
       />,
     );
     expect(before).toContain("value=\"40\"");
-    expect(before).not.toContain("checked");
+    expect(before).not.toContain("CABLE-001");
     expect(after).toContain("value=\"18\"");
     expect(after).toContain("checked");
+    expect(after).toContain("CABLE-001");
+  });
+
+  test("renders saved presentation in the inputs and the maintained preview", () => {
+    const html = renderToStaticMarkup(
+      <ReceiptSettingsPanel locations={[LOCATIONS[0]!]} view={view({
+        settings: { ...DEFAULT_RECEIPT_SETTINGS, presentation: {
+          templateVersion: 1, businessName: "Tema sample business", address: "Harbour Road",
+          contactPhone: "030 000 0000", taxRegistrationNumber: "SAMPLE-TAX",
+          footerMessage: "Sample footer", showCustomerName: false, showCustomerPhone: false, showCashier: false,
+        } },
+      })} />,
+    );
+    expect(html).toContain('value="Tema sample business"');
+    expect(html).toContain("Harbour Road");
+    expect(html).toContain("Sample footer");
+    expect(html).toContain('data-receipt-source="receipt-port"');
+    expect(html).not.toContain("Sample Customer");
+    expect(html).not.toContain("024 *** 0123");
+    expect(html).not.toContain("Sample cashier");
   });
 
   test("keeps loading, failure, and saving distinct", () => {

@@ -1,5 +1,5 @@
 import type { ReceiptSettings } from "../../../../../docs/contracts/domain.generated";
-import { DEFAULT_RECEIPT_SETTINGS, isReceiptSettings } from "../../core/receipt/settings";
+import { DEFAULT_RECEIPT_SETTINGS, copyReceiptSettings, isReceiptSettings, resolveReceiptPresentation } from "../../core/receipt/settings";
 import type { PosRestFetch } from "../http/server-fetch";
 
 export type ReceiptSettingsAuditEvent = {
@@ -68,7 +68,7 @@ export function createMemoryReceiptSettingsAdminStore(input?: {
     },
     seedSettings(organizationId, locationId, value) {
       if (!readLocation(organizationId, locationId) || !isReceiptSettings(value)) return;
-      settings.set(key(organizationId, locationId), value);
+      settings.set(key(organizationId, locationId), copyReceiptSettings(value));
     },
     async read({ organizationId, locationId }) {
       const location = readLocation(organizationId, locationId);
@@ -77,7 +77,7 @@ export function createMemoryReceiptSettingsAdminStore(input?: {
       return {
         locationId,
         locationName: location.name,
-        settings: stored ?? DEFAULT_RECEIPT_SETTINGS,
+        settings: copyReceiptSettings(stored ?? DEFAULT_RECEIPT_SETTINGS),
         persisted: stored !== undefined,
       };
     },
@@ -87,7 +87,13 @@ export function createMemoryReceiptSettingsAdminStore(input?: {
       if (!location) return "missing_location";
       if (input?.auditFails) return "unavailable";
       const stored = settings.get(key(value.organizationId, value.locationId));
-      settings.set(key(value.organizationId, value.locationId), value.settings);
+      const saved = copyReceiptSettings({
+        ...value.settings,
+        ...(value.settings.presentation !== undefined ? { presentation: resolveReceiptPresentation(value.settings.presentation) } : {}),
+        ...(value.settings.presentation === undefined && stored?.presentation !== undefined
+          ? { presentation: stored.presentation } : {}),
+      });
+      settings.set(key(value.organizationId, value.locationId), saved);
       audits.push({
         organizationId: value.organizationId,
         actorId: value.actorId,
@@ -95,14 +101,14 @@ export function createMemoryReceiptSettingsAdminStore(input?: {
         targetType: "receipt_settings",
         targetId: value.locationId,
         locationId: value.locationId,
-        before: stored ?? null,
-        after: value.settings,
+        before: stored === undefined ? null : copyReceiptSettings(stored),
+        after: copyReceiptSettings(saved),
         correlationId: value.correlationId,
       });
       return {
         locationId: value.locationId,
         locationName: location.name,
-        settings: value.settings,
+        settings: copyReceiptSettings(saved),
         persisted: true,
       };
     },
@@ -167,7 +173,7 @@ export function createSupabaseReceiptSettingsAdminStore(input: {
       const location = await readLocation(organizationId, locationId);
       if (location === "missing_location" || location === "unavailable") return location;
       const result = await request(
-        `pos_receipt_settings?organization_id=eq.${encodeURIComponent(organizationId)}&location_id=eq.${encodeURIComponent(locationId)}&select=shorten_product_names,product_name_max_characters,show_sku`,
+        `pos_receipt_settings?organization_id=eq.${encodeURIComponent(organizationId)}&location_id=eq.${encodeURIComponent(locationId)}&select=shorten_product_names,product_name_max_characters,show_sku,presentation`,
         { method: "GET" },
       );
       if (result === "unavailable" || !Array.isArray(result.body)) return "unavailable";
@@ -176,7 +182,7 @@ export function createSupabaseReceiptSettingsAdminStore(input: {
         return {
           locationId,
           locationName: location.name,
-          settings: DEFAULT_RECEIPT_SETTINGS,
+          settings: copyReceiptSettings(DEFAULT_RECEIPT_SETTINGS),
           persisted: false,
         };
       }
@@ -198,6 +204,7 @@ export function createSupabaseReceiptSettingsAdminStore(input: {
           p_shorten_product_names: value.settings.shortenProductNames,
           p_product_name_max_characters: value.settings.productNameMaxCharacters,
           p_show_sku: value.settings.showSku,
+          p_presentation: value.settings.presentation === undefined ? null : resolveReceiptPresentation(value.settings.presentation),
         },
       });
       if (result === "unavailable") return "unavailable";
@@ -221,6 +228,7 @@ function settingsFromRow(value: unknown): ReceiptSettings | undefined {
     shortenProductNames: record.shortenProductNames ?? record.shorten_product_names,
     productNameMaxCharacters: record.productNameMaxCharacters ?? record.product_name_max_characters,
     showSku: record.showSku ?? record.show_sku,
+    ...(record.presentation == null ? {} : { presentation: record.presentation }),
   };
-  return isReceiptSettings(candidate) ? candidate : undefined;
+  return isReceiptSettings(candidate) ? copyReceiptSettings(candidate) : undefined;
 }

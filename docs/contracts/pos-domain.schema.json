@@ -896,6 +896,23 @@
       ],
       "additionalProperties": false
     },
+    "ReceiptPresentation": {
+      "type": "object",
+      "properties": {
+        "templateVersion": { "const": 1 },
+        "businessName": { "type": "string", "maxLength": 80 },
+        "logoDataUrl": { "type": "string", "maxLength": 131072, "pattern": "^data:image/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$" },
+        "address": { "type": "string", "maxLength": 300 },
+        "contactPhone": { "type": "string", "maxLength": 80 },
+        "taxRegistrationNumber": { "type": "string", "maxLength": 80 },
+        "footerMessage": { "type": "string", "maxLength": 200 },
+        "showCustomerName": { "type": "boolean" },
+        "showCustomerPhone": { "type": "boolean" },
+        "showCashier": { "type": "boolean" }
+      },
+      "required": [ "templateVersion" ],
+      "additionalProperties": false
+    },
     "ReceiptSettings": {
       "type": "object",
       "properties": {
@@ -909,6 +926,9 @@
         },
         "showSku": {
           "type": "boolean"
+        },
+        "presentation": {
+          "$ref": "#/$defs/ReceiptPresentation"
         }
       },
       "required": [
@@ -947,6 +967,13 @@
         },
         "customerLabel": {
           "type": "string"
+        },
+        "customerPhone": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "presentation": {
+          "$ref": "#/$defs/ReceiptPresentation"
         },
         "lines": {
           "type": "array",

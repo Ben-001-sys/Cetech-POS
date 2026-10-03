@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReceiptPaperWidth } from "../../core/receipt/printer-preference";
+
 import {
   friendlyDeviceName,
   printerCapabilityLabel,
@@ -25,6 +27,8 @@ export interface SettingsScreenProps {
   readonly onAppearanceChange?: (appearance: AppearancePreference) => void;
   readonly onOpenStoreHealth?: () => void;
   readonly onRetry?: () => void;
+  readonly paperWidth?: ReceiptPaperWidth;
+  readonly onPaperWidthChange?: (width: ReceiptPaperWidth) => void;
 }
 
 export function SettingsScreen({
@@ -34,6 +38,8 @@ export function SettingsScreen({
   onAppearanceChange,
   onOpenStoreHealth,
   onRetry,
+  paperWidth = 80,
+  onPaperWidthChange,
 }: SettingsScreenProps) {
   return (
     <section className="settings-workspace workspace-surface" aria-labelledby="settings-title">
@@ -71,6 +77,20 @@ export function SettingsScreen({
             <div className="settings-value"><span className="label">Register</span><strong>{settings.registerName}</strong></div>
             <div className="settings-value"><span className="label">Scanner</span><span>{scannerCapabilityLabel(settings.scannerLabel)}</span></div>
             <div className="settings-value"><span className="label">Printer</span><span>{printerCapabilityLabel(settings.printerLabel)}</span></div>
+            <label className="field" htmlFor="receipt-paper-width">
+              <span>Receipt paper width</span>
+              <select
+                id="receipt-paper-width"
+                className="select"
+                value={paperWidth}
+                disabled={!onPaperWidthChange}
+                onChange={(event) => onPaperWidthChange?.(event.target.value === "58" ? 58 : 80)}
+              >
+                <option value={80}>80 mm</option>
+                <option value={58}>58 mm</option>
+              </select>
+            </label>
+            <p className="muted">Saved on this device. Match the paper width in the printer dialog.</p>
           </section>
 
           <section className="card card-pad stack settings-side" aria-labelledby="appearance-title">
