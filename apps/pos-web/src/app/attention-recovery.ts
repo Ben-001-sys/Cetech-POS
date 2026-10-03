@@ -1,5 +1,6 @@
-import type { OperationJournal, PaymentPort, SalesPort } from "../../../../docs/contracts/ports";
-import type { PendingOperation } from "../../../../docs/contracts/domain.generated";
+import type { ApiResult, OperationJournal, PaymentPort, SalesPort } from "../../../../docs/contracts/ports";
+import type { PaymentState, PendingOperation, SaleResolution } from "../../../../docs/contracts/domain.generated";
+import { cashierErrorMessage } from "../ui/cashier-language";
 import { listUnresolvedJournalRecords } from "../local/operation-journal";
 import {
   presentLocalRecovery,
@@ -33,6 +34,35 @@ export type LocalRecoveryContext = {
 
 export function localRecoveryContextKey(context: LocalRecoveryContext): string {
   return [context.organizationId, context.actorId, context.registerId, context.deviceId].join("\u001f");
+}
+
+/** One automatic auth refresh until this context has a successful inbox read. */
+export function createAttentionAuthRefreshGate(): {
+  readonly shouldRefresh: (context: LocalRecoveryContext, result: ApiResult<unknown>) => boolean;
+  readonly reset: () => void;
+} {
+  let contextKey: string | null = null;
+  let spent = false;
+  return {
+    shouldRefresh(context, result) {
+      const nextContextKey = localRecoveryContextKey(context);
+      if (contextKey !== nextContextKey) {
+        contextKey = nextContextKey;
+        spent = false;
+      }
+      if (result.ok) {
+        spent = false;
+        return false;
+      }
+      if (result.error.code !== "AUTH_REQUIRED" || spent) return false;
+      spent = true;
+      return true;
+    },
+    reset() {
+      contextKey = null;
+      spent = false;
+    },
+  };
 }
 
 export function isLocalRecoveryContextCurrent(
@@ -274,6 +304,53 @@ export type AttentionRecoveryLock = {
 
 export type AttentionRecoveryStatus = "in_flight" | "unsupported" | "attempted";
 
+export type AttentionRecoveryOutcome =
+  | { readonly status: "unsupported" }
+  | { readonly status: "attempted"; readonly kind: "sale"; readonly result: ApiResult<SaleResolution> }
+  | { readonly status: "attempted"; readonly kind: "payment"; readonly result: ApiResult<PaymentState> }
+  | { readonly status: "failed" };
+
+/** Only locally authored copy is displayed; bridge/provider messages are never shown verbatim. */
+export function attentionRecoveryFeedback(outcome: AttentionRecoveryOutcome): string {
+  if (outcome.status === "unsupported") return "This saved work needs a manager check. Do not start it again.";
+  if (outcome.status === "failed") return "Status could not be checked. Try again when connected. Do not take payment again.";
+  if (!outcome.result.ok) return `${cashierErrorMessage(outcome.result.error, "generic")} Your saved transaction was kept. Do not take payment again.`;
+  const status = outcome.result.data.status;
+  if (outcome.kind === "sale") {
+    if (status === "completed") return "The sale is complete. Open its existing receipt. Do not take payment again.";
+    if (status === "prepared") return "The existing sale is ready. Continue the same sale from Sell.";
+    if (status === "not_found" || status === "cancelled") return "The sale status was checked. Your cart was kept.";
+    return "This sale still needs checking. Do not take payment again. Contact a manager if it cannot be recovered.";
+  }
+  if (status === "verified") return "Payment is verified. The sale still needs to be checked. Do not take payment again.";
+  return "Payment is still being checked. Do not take payment again.";
+}
+
+export function recoveryRequiresSignIn(outcome: AttentionRecoveryOutcome): boolean {
+  return outcome.status === "attempted" && !outcome.result.ok && outcome.result.error.code === "AUTH_REQUIRED";
+}
+
+/** Bound operator recovery reads/replays without issuing any automatic second request. */
+export function boundedRecoveryFetch(fetchImpl: typeof fetch = fetch, timeoutMs = 20_000): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController();
+    const inherited = init?.signal;
+    const cancel = () => controller.abort();
+    if (inherited?.aborted) cancel();
+    inherited?.addEventListener("abort", cancel, { once: true });
+    const timer = setTimeout(cancel, timeoutMs);
+    try {
+      const response = await fetchImpl(input, { ...init, signal: controller.signal });
+      // Include JSON body delivery in the deadline, not only receipt of headers.
+      await response.clone().arrayBuffer();
+      return response;
+    } finally {
+      clearTimeout(timer);
+      inherited?.removeEventListener("abort", cancel);
+    }
+  };
+}
+
 export function createAttentionRecoveryLock(): AttentionRecoveryLock {
   let inFlightId: string | null = null;
   return {
@@ -296,25 +373,24 @@ export function createAttentionRecoveryLock(): AttentionRecoveryLock {
 export async function recoverAttentionItem(
   item: AttentionItemView,
   ports: AttentionRecoveryPorts,
-): Promise<"unsupported" | "attempted"> {
+): Promise<AttentionRecoveryOutcome> {
   if (!item.resolveAllowed || !item.transactionId) {
-    return "unsupported";
+    return { status: "unsupported" };
   }
   if (item.recoverKind === "payment") {
-    await ports.payments.resolve({
+    const result = await ports.payments.resolve({
       transactionId: item.transactionId,
       paymentId: item.paymentId,
     });
-    if (item.id.startsWith("local-journal:")) {
-      await ports.sales.resolve(item.transactionId);
+    if (result.ok && item.id.startsWith("local-journal:")) {
+      return { status: "attempted", kind: "sale", result: await ports.sales.resolve(item.transactionId) };
     }
-    return "attempted";
+    return { status: "attempted", kind: "payment", result };
   }
   if (item.recoverKind === "sale") {
-    await ports.sales.resolve(item.transactionId);
-    return "attempted";
+    return { status: "attempted", kind: "sale", result: await ports.sales.resolve(item.transactionId) };
   }
-  return "unsupported";
+  return { status: "unsupported" };
 }
 
 export async function runAttentionRecovery(input: {
@@ -324,14 +400,21 @@ export async function runAttentionRecovery(input: {
   readonly reload: () => Promise<void>;
   readonly onStart?: (id: string) => void;
   readonly onFinish?: (id: string) => void;
+  readonly onOutcome?: (outcome: AttentionRecoveryOutcome) => void | Promise<void>;
 }): Promise<AttentionRecoveryStatus> {
   if (!input.lock.tryBegin(input.item.id)) {
     return "in_flight";
   }
   input.onStart?.(input.item.id);
   try {
-    await recoverAttentionItem(input.item, input.ports);
-    return "attempted";
+    let outcome: AttentionRecoveryOutcome;
+    try {
+      outcome = await recoverAttentionItem(input.item, input.ports);
+    } catch {
+      outcome = { status: "failed" };
+    }
+    await input.onOutcome?.(outcome);
+    return outcome.status === "unsupported" ? "unsupported" : "attempted";
   } finally {
     try {
       await input.reload();

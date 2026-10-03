@@ -386,8 +386,22 @@ export function createSupabaseCheckoutStore(options: SupabaseCheckoutStoreOption
 
     async seedPreparedSale(input) {
       const record = saleFromSeed(input);
-      await upsertSale(record, request);
-      return record;
+      // An original-order repair may race a payment on another server instance.
+      // Seeding must never replace the first persisted sale/payment state.
+      const result = await request({
+        path: "pos_checkout_sales?on_conflict=transaction_id",
+        method: "POST",
+        prefer: "resolution=ignore-duplicates,return=minimal",
+        body: saleRestRow(record),
+      });
+      if (result.status !== 201 && result.status !== 200) {
+        throw new Error("durable checkout store rejected prepared sale insert");
+      }
+      const saved = await this.getSale(input.prepared.transactionId);
+      if (!saved) {
+        throw new Error("durable checkout store did not retain a prepared sale");
+      }
+      return saved;
     },
 
     async getSale(transactionId) {
@@ -788,7 +802,19 @@ async function upsertSale(
     readonly prefer?: string;
   }) => Promise<{ readonly status: number; readonly body: unknown }>,
 ): Promise<void> {
-  const body = {
+  const result = await request({
+    path: "pos_checkout_sales?on_conflict=transaction_id",
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=minimal",
+    body: saleRestRow(sale),
+  });
+  if (result.status !== 201 && result.status !== 200) {
+    throw new Error("durable checkout store rejected sale");
+  }
+}
+
+function saleRestRow(sale: PosSaleRecord): RestRow {
+  return {
     transaction_id: sale.prepared.transactionId,
     organization_id: sale.organizationId,
     location_id: sale.locationId,
@@ -801,15 +827,6 @@ async function upsertSale(
     record: sale,
     updated_at: new Date().toISOString(),
   };
-  const result = await request({
-    path: "pos_checkout_sales?on_conflict=transaction_id",
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    body,
-  });
-  if (result.status !== 201 && result.status !== 200) {
-    throw new Error("durable checkout store rejected sale");
-  }
 }
 
 const PENDING_DIAGNOSTIC_SELECT =

@@ -460,6 +460,16 @@ The important rule is:
 
 **Resolve the existing work. Do not create a second copy of the same transaction.**
 
+**Original-sale recovery candidate — 3 October 2026:** Use these steps only after the coordinator confirms the recovery build in the Test Brief.
+
+1. Select **Check / Recover**. Wait for the result shown above the attention list.
+2. If your session ended, sign in again. Saved carts and unfinished work are kept; the POS does not repeat the operation automatically.
+3. If **Repair this sale** is offered, it belongs to the original unfinished sale on this device and register. Select it once to repair that existing order. It does not take payment.
+4. After a successful repair, the POS opens **Sell** with the same saved sale and payment choice. Check the order and total before continuing the normal payment steps.
+5. If repair cannot prove the original unpaid order and current stock reservation, the sale stays blocked and the result explains why. Record that result for the coordinator. Do not clear browser data, start the same sale again, or retry payment. If the stock reservation expires before you choose payment, new payment stays closed; ask the coordinator to check this same order. Existing payment status can still be checked.
+
+Managers use the same checks. Manager access does not override an unresolved order, missing saved attempt, payment already in progress, another person's saved work, or expired sign-in. Repair is available only for the original matching saved attempt; taking over a different person's unfinished sale requires a separate approved recovery procedure.
+
 ---
 
 ## 20. Register and ending a shift

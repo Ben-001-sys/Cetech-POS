@@ -1095,6 +1095,15 @@ Manager test only.
 
 ## T90 — Attention list
 
+**Original-sale recovery candidate — 3 October 2026:** After the coordinator confirms this build, use an agreed unfinished test sale from your own sign-in/device/register. As a cashier or an assigned manager:
+
+1. Select **Check / Recover** and capture its visible result. The control must become usable again when checking finishes or times out.
+2. If offered, select **Repair this sale** once. Confirm the POS resumes the same original order and total on Sell; repair must not take payment or create a second order.
+3. Stop at payment choice for this check. Record whether the same saved sale resumed. Do not confirm cash or start an electronic payment for this recovery-only test.
+4. In a separately agreed expired-session case, confirm recovery opens sign-in and keeps the cart and unfinished work. Signing in must not automatically resend the operation.
+5. A missing/mismatched saved attempt, another person's attempt, existing payment, or unproven order/reservation must remain blocked with a clear result. Manager access must not bypass these checks. If a recovered reservation expires before payment, confirm no new payment starts; status checks for already-recorded payment must remain available.
+
+
 **Expected:**
 - outstanding work is understandable;
 - operator sees a clear next action;

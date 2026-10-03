@@ -235,6 +235,8 @@ export function createInMemoryCheckoutStore(): FaultInjectingCheckoutStore {
     },
 
     async seedPreparedSale(input) {
+      const existing = sales.get(input.prepared.transactionId);
+      if (existing) return { ...existing };
       const record: PosSaleRecord = {
         ...input,
         status: "prepared",

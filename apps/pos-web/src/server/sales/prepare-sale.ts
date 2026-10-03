@@ -23,6 +23,7 @@ import { canonicalJson, sha256Hex } from "../../local/canonical";
 import { toIsoTimestamp } from "../auth/ids";
 import { apiFailure } from "../http/api-failure";
 import { moneyEqual, type CheckoutStore, type PrepareEffectCertainty, type StaffActor } from "../../core/checkout/types";
+import { claimKindForExistingPrepare } from "../../core/checkout/prepare-claim";
 import { isDefinitivePreEffectRejection, prepareEffectEvidence, withPreEffectSignal } from "./prepare-effect";
 import { isPreparedSale, isSaleResolution } from "./schema";
 import { assertBindingMatchesPrepareRequest, assertSaleMatchesPrepareRequest } from "./transaction-scope";
@@ -37,6 +38,7 @@ export async function prepareSale(input: {
   readonly now: Date;
 }): Promise<ApiResult<PreparedSale>> {
   const { store, salesPort, actor, request, context, now } = input;
+  const requestStartedAt = Date.now();
   return store.withLock(`prepare:${request.transactionId}`, async () => {
     const existing = await store.getSale(request.transactionId);
     if (existing) {
@@ -59,7 +61,12 @@ export async function prepareSale(input: {
     } else {
       const scoped = await assertPrepareScope({ store, actor, request, context, now });
       if (!scoped.ok) {
-        return scoped;
+        // Quote expiry prevents a new order, not a repair of the already claimed
+        // original order. The original hash is checked by claimIdempotency below;
+        // every remaining scope check is repeated before any repair dispatch.
+        if (scoped.error.code !== "QUOTE_EXPIRED" || !(await hasOriginalRepairIntent(input))) {
+          return scoped;
+        }
       }
       const foreign = await store.lookupCommandScope({
         transactionId: request.transactionId,
@@ -74,6 +81,14 @@ export async function prepareSale(input: {
         });
         if (!bound.ok) {
           return bound;
+        }
+        const original = await store.findSalePrepareOperation(request.transactionId);
+        if (original && original.idempotencyKey !== context.idempotencyKey) {
+          return apiFailure(
+            "IDEMPOTENCY_CONFLICT",
+            "This transaction belongs to its original prepare key. Check or recover that same attempt.",
+            context.correlationId,
+          );
         }
       }
     }
@@ -103,7 +118,12 @@ export async function prepareSale(input: {
       return apiFailure("OPERATION_IN_PROGRESS", "prepare is already in progress for this key", context.correlationId);
     }
     if (claim.kind === "replay") {
-      return replayPrepared(claim.outcome, context.correlationId);
+      const replay = replayPrepared(claim.outcome, context.correlationId);
+      if (!replay.ok) return replay;
+      return replayUnpaidPrepared({
+        store, actor, request, context, prepared: replay.data,
+        currentTime: () => new Date(now.getTime() + Math.max(0, Date.now() - requestStartedAt)),
+      });
     }
     if (claim.kind === "repair") {
       return settleSentPrepare({
@@ -115,6 +135,8 @@ export async function prepareSale(input: {
         now,
         failure: undefined,
         forceResolve: true,
+        allowOriginalRepair: true,
+        repairNow: () => new Date(now.getTime() + Math.max(0, Date.now() - requestStartedAt)),
       });
     }
 
@@ -474,6 +496,7 @@ async function assertPrepareScope(input: {
   readonly request: PrepareSaleRequest;
   readonly context: CommandContext;
   readonly now: Date;
+  readonly allowExpiredOriginalQuote?: boolean;
 }): Promise<ApiResult<{ quote: Quote }>> {
   const quote = await input.store.getQuote(input.request.quoteId);
   if (!quote) {
@@ -482,7 +505,8 @@ async function assertPrepareScope(input: {
   if (quote.fingerprint !== input.request.quoteFingerprint) {
     return apiFailure("QUOTE_CHANGED", "quoteFingerprint does not match the stored quote", input.context.correlationId);
   }
-  if (Date.parse(quote.expiresAt) <= input.now.getTime()) {
+  const quoteExpiry = Date.parse(quote.expiresAt);
+  if (!Number.isFinite(quoteExpiry) || (!input.allowExpiredOriginalQuote && quoteExpiry <= input.now.getTime())) {
     return apiFailure("QUOTE_EXPIRED", "Quote has expired", input.context.correlationId);
   }
   if (!quote.purchasable) {
@@ -702,6 +726,8 @@ async function settleSentPrepare(input: {
   readonly now: Date;
   readonly failure: ApiFailure | undefined;
   readonly forceResolve?: boolean;
+  readonly allowOriginalRepair?: boolean;
+  readonly repairNow?: () => Date;
 }): Promise<ApiResult<PreparedSale>> {
   const prior = await input.store.readPrepareDiagnostic(
     input.actor.organizationId,
@@ -731,7 +757,7 @@ async function settleSentPrepare(input: {
   } catch {
     resolved = undefined;
   }
-  if (!resolved?.ok || !isSaleResolution(resolved.data)) {
+  if (!resolved?.ok || !isSaleResolution(resolved.data) || resolved.data.transactionId !== input.request.transactionId) {
     await recordPrepareOutcome(input, {
       status: "requires_attention",
       effectCertainty: "unknown",
@@ -747,6 +773,19 @@ async function settleSentPrepare(input: {
 
   const remoteStatus = resolved.data.status;
   if (remoteStatus === "prepared") {
+    if (input.allowOriginalRepair) {
+      const repaired = await repairOriginalOrder({ ...input, resolution: resolved.data });
+      if (repaired) return repaired;
+      await recordPrepareOutcome(input, {
+        status: "requires_attention", effectCertainty: "prepared", errorCode: "REQUIRES_ATTENTION",
+        remoteStatus, paymentId: resolved.data.paymentId,
+        message: "The original prepared sale could not be safely recovered from its frozen intent. Payment stays closed.",
+      });
+      return apiFailure(
+        "REQUIRES_ATTENTION", "The original prepared sale could not be safely recovered from its frozen intent. Payment stays closed.",
+        input.context.correlationId,
+      );
+    }
     let recovered: ApiResult<PreparedSale> | undefined;
     try {
       recovered = await recoverPrepared({ ...input, knownResolution: resolved });
@@ -862,6 +901,11 @@ async function settleSentPrepare(input: {
     return apiFailure("NOT_FOUND", CANCELLED_ATTEMPT, input.context.correlationId, { field: "sale_cancelled" });
   }
 
+  if (input.allowOriginalRepair) {
+    const repaired = await repairOriginalOrder({ ...input, resolution: resolved.data });
+    if (repaired) return repaired;
+  }
+
   await recordPrepareOutcome(input, {
     status: "requires_attention",
     effectCertainty: "unknown",
@@ -875,6 +919,126 @@ async function settleSentPrepare(input: {
     resolved.data.message ?? "This sale needs a manager check. Do not start another sale for this attempt.",
     input.context.correlationId,
   );
+}
+
+async function hasOriginalRepairIntent(input: {
+  readonly store: CheckoutStore;
+  readonly actor: StaffActor;
+  readonly request: PrepareSaleRequest;
+  readonly context: CommandContext;
+}): Promise<boolean> {
+  const operation = await input.store.findSalePrepareOperation(input.request.transactionId);
+  if (
+    !operation || operation.organizationId !== input.actor.organizationId ||
+    operation.transactionId !== input.request.transactionId ||
+    operation.idempotencyKey !== input.context.idempotencyKey
+  ) return false;
+  const intent = await input.store.getPrepareIntent(input.actor.organizationId, "sale.prepare", input.context.idempotencyKey);
+  return !!intent && prepareIntentMatchesRequest({
+    intent,
+    quoteId: input.request.quoteId,
+    quoteFingerprint: input.request.quoteFingerprint,
+    transactionId: input.request.transactionId,
+  }) && claimKindForExistingPrepare({
+    status: operation.status,
+    outcome: operation.outcome,
+    intentPresent: true,
+  }) === "repair";
+}
+
+const EXISTING_ORDER_NOT_PAYABLE = "This existing order cannot yet be safely opened for payment.";
+
+/** Only the explicit original POST retry may ask Woo to repair/replay its own order. */
+async function repairOriginalOrder(input: {
+  readonly store: CheckoutStore;
+  readonly salesPort: Pick<SalesPort, "prepare" | "resolve">;
+  readonly actor: StaffActor;
+  readonly request: PrepareSaleRequest;
+  readonly context: CommandContext;
+  readonly now: Date;
+  readonly resolution: SaleResolution;
+  readonly repairNow?: () => Date;
+}): Promise<ApiResult<PreparedSale> | undefined> {
+  const remote = input.resolution;
+  if (
+    remote.transactionId !== input.request.transactionId || !remote.saleId || !remote.orderReference ||
+    remote.paymentId || remote.receiptId ||
+    !(remote.status === "prepared" ||
+      (remote.status === "requires_attention" && remote.message === EXISTING_ORDER_NOT_PAYABLE))
+  ) return undefined;
+  if (!(await hasOriginalRepairIntent(input))) return undefined;
+  const binding = await input.store.lookupCommandScope({ transactionId: input.request.transactionId, operation: "sale.prepare" });
+  if (!binding || !assertBindingMatchesPrepareRequest({
+    binding, actor: input.actor, request: input.request, correlationId: input.context.correlationId,
+  }).ok) return undefined;
+  const scoped = await assertPrepareScope({ ...input, allowExpiredOriginalQuote: true });
+  if (!scoped.ok) return undefined;
+  const quote = scoped.data.quote;
+  const intent = await input.store.getPrepareIntent(input.actor.organizationId, "sale.prepare", input.context.idempotencyKey);
+  if (!intent || quote.lines.length === 0 || quote.lines.length !== intent.lines.length || quote.lines.some((line, index) => {
+    const frozen = intent.lines[index];
+    return line.lineId !== intent.lineIds[index] || !frozen || line.quantity !== frozen.quantity ||
+      !(["unitPrice", "subtotal", "discount", "tax", "total"] as const).every((field) => moneyEqual(line[field], frozen[field]));
+  })) return undefined;
+  if (await hasOtherSaleEffects(input.store, input.request.transactionId)) return undefined;
+
+  const attention = async (message: string): Promise<ApiResult<PreparedSale>> => {
+    await recordPrepareOutcome(input, {
+      status: "requires_attention", effectCertainty: "unknown", errorCode: "REQUIRES_ATTENTION",
+      remoteStatus: remote.status, message,
+    });
+    return apiFailure("REQUIRES_ATTENTION", message, input.context.correlationId);
+  };
+  await notePrepareDispatch(input);
+  let commercial: ApiResult<PreparedSale>;
+  try {
+    commercial = await input.salesPort.prepare(input.request, input.context);
+  } catch {
+    return attention("The original-order repair response is unknown. Check this same sale again; do not start another sale or take payment.");
+  }
+  if (!commercial.ok) return attention(commercial.error.message);
+  const prepared = commercial.data;
+  const reservationIsCurrent = () => Number.isFinite(Date.parse(prepared.expiresAt)) &&
+    Date.parse(prepared.expiresAt) > (input.repairNow?.() ?? input.now).getTime();
+  if (
+    !isPreparedSale(prepared) || prepared.transactionId !== input.request.transactionId ||
+    prepared.saleId !== remote.saleId || prepared.orderReference !== remote.orderReference ||
+    prepared.quoteFingerprint !== input.request.quoteFingerprint || !moneyEqual(prepared.total, quote.total) ||
+    !reservationIsCurrent()
+  ) return attention("The original-order repair did not prove the same sale, frozen total and current reservation. Payment stays closed.");
+  let checked: ApiResult<SaleResolution>;
+  try {
+    checked = await input.salesPort.resolve(input.request.transactionId);
+  } catch {
+    return attention("The repaired original order could not be checked. Check this same sale again before taking payment.");
+  }
+  if (
+    !checked.ok || !isSaleResolution(checked.data) || checked.data.status !== "prepared" ||
+    checked.data.transactionId !== prepared.transactionId || checked.data.saleId !== prepared.saleId ||
+    checked.data.orderReference !== prepared.orderReference || checked.data.paymentId || checked.data.receiptId ||
+    !reservationIsCurrent() || await hasOtherSaleEffects(input.store, input.request.transactionId)
+  ) return attention("The original sale has not been proven unpaid and prepared. Payment stays closed.");
+  try {
+    const persisted = await persistPrepared({ ...input, prepared, quote, lines: intent.lines });
+    const saved = persisted.ok ? await input.store.getSale(input.request.transactionId) : undefined;
+    if (
+      !persisted.ok || !saved || saved.status !== "prepared" || saved.assignedPaymentId || saved.receipt ||
+      canonicalJson(saved.prepared) !== canonicalJson(prepared) || !reservationIsCurrent()
+    ) return attention("The repaired original sale could not be saved safely. Payment stays closed.");
+    await input.store.acknowledgeIdempotency(input.actor.organizationId, "sale.prepare", input.context.idempotencyKey, saved.prepared);
+    return { ok: true, data: saved.prepared, correlationId: input.context.correlationId };
+  } catch {
+    return attention("The repaired original sale could not be saved. Check this same sale again before taking payment.");
+  }
+}
+
+async function hasOtherSaleEffects(store: CheckoutStore, transactionId: Uuid): Promise<boolean> {
+  const [payment, receipt, cash, finalize, cancel, local] = await Promise.all([
+    store.getPaymentForTransaction(transactionId), store.getReceipt(transactionId), store.listCashSales(transactionId),
+    store.lookupCommandScope({ transactionId, operation: "sale.finalize" }),
+    store.lookupCommandScope({ transactionId, operation: "sale.cancel" }), store.getSale(transactionId),
+  ]);
+  return !!payment || !!receipt || cash.length > 0 || !!finalize || !!cancel || !!local;
 }
 
 async function recordPrepareOutcome(
@@ -924,4 +1088,42 @@ function replayPrepared(outcome: unknown, correlationId: CommandContext["correla
     return apiFailure("INTEGRATION_UNAVAILABLE", "stored prepare outcome is not a valid PreparedSale", correlationId);
   }
   return { ok: true, data: outcome, correlationId };
+}
+
+/** An acknowledged prepare is historical evidence, not permission to collect money again. */
+async function replayUnpaidPrepared(input: {
+  readonly store: CheckoutStore;
+  readonly actor: StaffActor;
+  readonly request: PrepareSaleRequest;
+  readonly context: CommandContext;
+  readonly prepared: PreparedSale;
+  readonly currentTime: () => Date;
+}): Promise<ApiResult<PreparedSale>> {
+  const attention = () => apiFailure(
+    "REQUIRES_ATTENTION",
+    "This existing sale is not currently proven unpaid and ready for payment. Check this same sale; do not take payment again.",
+    input.context.correlationId,
+  );
+  const [payment, receipt, cash, finalize, cancel] = await Promise.all([
+    input.store.getPaymentForTransaction(input.request.transactionId),
+    input.store.getReceipt(input.request.transactionId),
+    input.store.listCashSales(input.request.transactionId),
+    input.store.lookupCommandScope({ transactionId: input.request.transactionId, operation: "sale.finalize" }),
+    input.store.lookupCommandScope({ transactionId: input.request.transactionId, operation: "sale.cancel" }),
+  ]);
+  if (payment || receipt || cash.length > 0 || finalize || cancel) return attention();
+  // Read after the evidence checks, rather than reuse the sale captured before
+  // the idempotency lookup; another tab may have started payment in between.
+  const latest = await input.store.getSale(input.request.transactionId);
+  if (
+    !latest || latest.status !== "prepared" || latest.assignedPaymentId || latest.receipt || latest.commercialConfirmed ||
+    !isPreparedSale(latest.prepared) || canonicalJson(latest.prepared) !== canonicalJson(input.prepared) ||
+    latest.prepared.transactionId !== input.request.transactionId || latest.prepared.quoteFingerprint !== input.request.quoteFingerprint ||
+    !Number.isFinite(Date.parse(latest.prepared.expiresAt)) || Date.parse(latest.prepared.expiresAt) <= input.currentTime().getTime()
+  ) return attention();
+  const matched = assertSaleMatchesPrepareRequest({
+    sale: latest, actor: input.actor, request: input.request, correlationId: input.context.correlationId,
+  });
+  if (!matched.ok) return matched;
+  return { ok: true, data: latest.prepared, correlationId: input.context.correlationId };
 }

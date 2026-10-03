@@ -38,6 +38,16 @@ export async function installAuthoritativeStaffSession(
   const shiftOpen = options.shiftOpen ?? true;
   let sessionGets = 0;
   let catalogSyncs = 0;
+  // The authenticated fixture must give its inbox the same authority as session.
+  // Recovery-specific tests can override this with an actual expired-session result.
+  await page.route("**/api/pos/v1/attention", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, correlationId: CORRELATION, data: { items: [] } }),
+    });
+  });
   await page.route("**/api/pos/v1/catalog/sync**", async (route) => {
     catalogSyncs += 1;
     await route.fulfill({

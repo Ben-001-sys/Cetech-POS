@@ -6,6 +6,7 @@ import { SellLoadingSkeleton, SellRuntimeScreen, type SellSessionPorts } from ".
 import { createBrowserPricingPort } from "../features/sell/runtime/pricingClient";
 import {
   createBrowserCashCheckoutPorts,
+  createBrowserCheckoutUseCases,
   createBrowserPaymentPort,
   createBrowserRegisterPort,
   createBrowserReturnPort,
@@ -13,6 +14,9 @@ import {
 } from "./checkout-client";
 import {
   checkoutBlockedByLocalRecovery,
+  attentionRecoveryFeedback,
+  boundedRecoveryFetch,
+  createAttentionAuthRefreshGate,
   createAttentionRecoveryLock,
   createRecoveryScanGate,
   isLocalRecoveryContextCurrent,
@@ -20,8 +24,10 @@ import {
   localRecoverySellBanner,
   mergeAttentionItems,
   runAttentionRecovery,
+  recoveryRequiresSignIn,
   type LocalRecoveryContext,
 } from "./attention-recovery";
+import { canOfferOriginalPrepareRepair, loadOriginalPrepareRepair, repairOriginalPrepare, shouldDeferOriginalPrepareAcknowledgement } from "./attention-prepare-repair";
 import { RegisterRuntimeScreen } from "./register-runtime";
 import { ReturnsRuntimeScreen, createBrowserHistoricReturnSaleLookup } from "./returns-runtime";
 import { StaffAuthGate } from "./staff-auth-gate";
@@ -221,26 +227,21 @@ export function PosRuntime({
     };
   }, []);
   const registerPort = useMemo(() => createBrowserRegisterPort({ fetchImpl }), [fetchImpl]);
+  const recoveryFetch = useMemo(() => boundedRecoveryFetch(fetchImpl), [fetchImpl]);
   const paymentPort = useMemo(
     () =>
       createBrowserPaymentPort({
-        fetchImpl,
+        fetchImpl: recoveryFetch,
         journal: recoveryJournal,
         tenderActivity: recoveryTenderActivity,
       }),
-    [fetchImpl, recoveryJournal, recoveryTenderActivity],
-  );
-  const salesPort = useMemo(
-    () =>
-      createBrowserSalesResolvePort({
-        fetchImpl,
-        journal: recoveryJournal,
-        tenderActivity: recoveryTenderActivity,
-      }),
-    [fetchImpl, recoveryJournal, recoveryTenderActivity],
+    [recoveryFetch, recoveryJournal, recoveryTenderActivity],
   );
   const attentionRecoveryLock = useRef(createAttentionRecoveryLock());
+  const attentionAuthRefreshGate = useRef(createAttentionAuthRefreshGate());
   const [recoveringItemId, setRecoveringItemId] = useState<string | null>(null);
+  const [recoveryFeedback, setRecoveryFeedback] = useState<{ context: LocalRecoveryContext; message: string } | null>(null);
+  const [repairCandidate, setRepairCandidate] = useState<{ item: AttentionItemView; context: LocalRecoveryContext; shiftId: string } | null>(null);
   const runtime = useMemo<StaffRuntimeController>(
     () =>
       createStaffRuntimeController({
@@ -297,6 +298,15 @@ export function PosRuntime({
     recoveryDeviceId,
   ]);
 
+  const recoveryContextIsActive = useCallback((context: LocalRecoveryContext, shiftId?: string) => {
+    const current = runtime.getState();
+    return hasFreshStaffActionAuthority(current) &&
+      current.session?.actorId === context.actorId && current.session?.organizationId === context.organizationId &&
+      current.selectedRegisterId === context.registerId &&
+      (current.shift?.deviceId || readOrCreateLocalDeviceId()) === context.deviceId &&
+      (shiftId === undefined || current.shift?.id === shiftId);
+  }, [runtime]);
+
   const loadAttention = useCallback(async (mode: "full" | "refresh" = "full") => {
     if (mode === "full") {
       setAttentionState("loading");
@@ -304,7 +314,7 @@ export function PosRuntime({
     const scannedContext = currentRecoveryContext;
     const token = recoveryScanGate.current.start();
     const [result, localResult] = await Promise.all([
-      fetchAttentionInbox(fetchImpl),
+      fetchAttentionInbox(recoveryFetch),
       loadLocalJournalAttentionItems(recoveryJournal, {
         actorId: scannedContext.actorId,
         registerId: scannedContext.registerId || null,
@@ -328,14 +338,21 @@ export function PosRuntime({
     if (!result.ok) {
       setServerAttention([]);
       setAttentionState(localResult.ok ? "degraded" : "error");
+      if (recoveryContextIsActive(scannedContext) && attentionAuthRefreshGate.current.shouldRefresh(scannedContext, result)) {
+        void runtime.refreshRegister();
+      }
       return;
+    }
+    if (recoveryContextIsActive(scannedContext)) {
+      attentionAuthRefreshGate.current.shouldRefresh(scannedContext, result);
     }
     setServerAttention(result.data.items);
     setAttentionState(localResult.ok ? "ready" : "degraded");
-  }, [currentRecoveryContext, fetchImpl, recoveryJournal]);
+  }, [currentRecoveryContext, recoveryFetch, recoveryJournal, recoveryContextIsActive, runtime]);
 
   useEffect(() => {
     if (authority.status !== "ready" || !authority.session) {
+      attentionAuthRefreshGate.current.reset();
       return;
     }
     const timer = window.setTimeout(() => {
@@ -853,6 +870,53 @@ export function PosRuntime({
           </section>
         )
       ) : (
+        <>
+        {route === "attention" && recoveryFeedback && isLocalRecoveryContextCurrent(recoveryFeedback.context, currentRecoveryContext) ? (
+          <div className="banner warning" role="status" data-attention-recovery-feedback="true">
+            <span>{recoveryFeedback.message}</span>
+            {repairCandidate && authoritativeActionsAllowed && isLocalRecoveryContextCurrent(repairCandidate.context, currentRecoveryContext) ? (
+              <>
+                <span>Repair checks the original sale. Choose payment only after it is ready.</span>
+                <button className="btn" type="button" disabled={Boolean(recoveringItemId)} onClick={() => {
+                  const candidate = repairCandidate;
+                  if (!attentionRecoveryLock.current.tryBegin(candidate.item.id)) return;
+                  setRecoveringItemId(candidate.item.id);
+                  setRepairCandidate(null);
+                  void (async () => {
+                    try {
+                      const outcome = await repairOriginalPrepare({
+                        db: openPosLocalDatabase(),
+                        ...candidate,
+                        checkout: createBrowserCheckoutUseCases({ fetchImpl: boundedRecoveryFetch(fetchImpl, 45_000), journal: recoveryJournal, tenderActivity: recoveryTenderActivity, preserveUnresolvedOnFailure: true, deferSuccessfulAcknowledgement: true }),
+                        isCurrent: () => recoveryContextIsActive(candidate.context, candidate.shiftId),
+                      });
+                      if (!recoveryContextIsActive(candidate.context, candidate.shiftId)) return;
+                      if (outcome.status === "ready") {
+                        await loadAttention("refresh");
+                        if (recoveryContextIsActive(candidate.context, candidate.shiftId)) {
+                          setRecoveryFeedback(null);
+                          showToast({ title: "Original sale recovered.", detail: "Continue the same sale and choose payment." });
+                          onNavigate("sell");
+                        }
+                      } else {
+                        setRecoveryFeedback({ context: candidate.context, message: outcome.status === "failed" && outcome.result && !outcome.result.ok
+                          ? `${toCashierError({ code: outcome.result.error.code, domain: "generic" }).message} Your original sale was kept. Do not take payment again.`
+                          : "This sale could not be safely recovered. Your original sale was kept. Contact a manager. Do not take payment again." });
+                        if (outcome.status === "failed" && outcome.result && !outcome.result.ok && outcome.result.error.code === "AUTH_REQUIRED") await runtime.refreshRegister();
+                        await loadAttention("refresh");
+                      }
+                    } catch {
+                      if (recoveryContextIsActive(candidate.context)) setRecoveryFeedback({ context: candidate.context, message: "Recovery could not be completed. Your original sale was kept. Do not take payment again." });
+                    } finally {
+                      attentionRecoveryLock.current.end(candidate.item.id);
+                      setRecoveringItemId((current) => current === candidate.item.id ? null : current);
+                    }
+                  })();
+                }}>Repair this sale</button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         <ApprovedWorkspaceScreens
           route={route}
           authority={authority}
@@ -914,15 +978,49 @@ export function PosRuntime({
                   void runAttentionRecovery({
                     item,
                     lock: attentionRecoveryLock.current,
-                    ports: { payments: paymentPort, sales: salesPort },
+                    ports: { payments: paymentPort, sales: createBrowserSalesResolvePort({
+                      fetchImpl: recoveryFetch,
+                      journal: recoveryJournal,
+                      tenderActivity: recoveryTenderActivity,
+                      shouldDeferPreparedAcknowledgement: async (transactionId) => {
+                        const shiftId = authority.shift?.id;
+                        if (!shiftId) return false;
+                        return shouldDeferOriginalPrepareAcknowledgement({
+                          db: openPosLocalDatabase(), item, context: currentRecoveryContext, shiftId, transactionId,
+                          isCurrent: () => recoveryContextIsActive(currentRecoveryContext, shiftId),
+                        });
+                      },
+                    }) },
                     reload: () => loadAttention("refresh"),
-                    onStart: (id) => setRecoveringItemId(id),
+                    onStart: (id) => {
+                      setRecoveringItemId(id);
+                      setRepairCandidate(null);
+                      setRecoveryFeedback({ context: currentRecoveryContext, message: "Checking this sale… Do not take payment again." });
+                    },
                     onFinish: (id) => setRecoveringItemId((current) => (current === id ? null : current)),
+                    onOutcome: async (outcome) => {
+                      const context = currentRecoveryContext;
+                      if (!recoveryContextIsActive(context)) return;
+                      setRepairCandidate(null);
+                      setRecoveryFeedback({ context, message: attentionRecoveryFeedback(outcome) });
+                      if (recoveryRequiresSignIn(outcome)) {
+                        await runtime.refreshRegister();
+                        return;
+                      }
+                      const shiftId = authority.shift?.id;
+                      if (shiftId && canOfferOriginalPrepareRepair(outcome, item.transactionId)) {
+                        const original = await loadOriginalPrepareRepair({ db: openPosLocalDatabase(), item, context, shiftId });
+                        if (original && recoveryContextIsActive(context, shiftId)) setRepairCandidate({ item, context, shiftId });
+                      }
+                    },
+                  }).catch(() => {
+                    if (recoveryContextIsActive(currentRecoveryContext)) setRecoveryFeedback({ context: currentRecoveryContext, message: "Status could not be checked. Your saved sale was kept. Do not take payment again." });
                   });
                 }
               : undefined
           }
         />
+        </>
       )}
     </AppShell>
     </PosRuntimeOwner>

@@ -60,6 +60,12 @@ type BrowserCheckoutOptions = {
   readonly tenderActivity?: TenderActivityPort;
   readonly journal?: OperationJournal;
   readonly now?: () => Date;
+  /** Explicit replay of an ambiguous existing command must retain its earlier evidence on failure. */
+  readonly preserveUnresolvedOnFailure?: boolean;
+  /** Recovery caller acknowledges only after validating and durably handing off the original attempt. */
+  readonly deferSuccessfulAcknowledgement?: boolean;
+  /** Attention may retain a proven original prepare until its explicit resume handoff is durable. */
+  readonly shouldDeferPreparedAcknowledgement?: (transactionId: Uuid) => Promise<boolean>;
 };
 
 type JournalEffect = {
@@ -111,6 +117,11 @@ async function finishJournalEffect<T>(
     return;
   }
   try {
+    if (result.ok && options.deferSuccessfulAcknowledgement) return;
+    if (!result.ok && options.preserveUnresolvedOnFailure) {
+      await options.journal.markRequiresAttention(operationId, result.error.code);
+      return;
+    }
     if (!result.ok && result.error.details?.field === "pre_effect") {
       await options.journal.markAcknowledged(operationId);
       return;
@@ -403,7 +414,9 @@ export function createBrowserSalesResolvePort(options: BrowserCheckoutOptions = 
         { correlationId: crypto.randomUUID() },
         options,
       );
-      await reconcileSaleJournal(options, transactionId, result);
+      const deferPrepared = result.ok && result.data.status === "prepared" &&
+        await options.shouldDeferPreparedAcknowledgement?.(transactionId);
+      if (!deferPrepared) await reconcileSaleJournal(options, transactionId, result);
       if (saleTerminal(result) || (result.ok && result.data.status === "not_found")) {
         await options.tenderActivity?.clear(transactionId);
       } else if (result.ok) {

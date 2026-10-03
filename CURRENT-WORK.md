@@ -196,6 +196,54 @@ forbidden:
 
 # Current work ledger
 
+## SALE-RECOVERY-01 — explicit original-order repair and truthful recovery feedback
+
+Owner report on 2026-10-03: “IT'S NOT RESOLVING”, with the installed-client Needs attention sale-recovery screen. Existing urgent direction requires fixing discovered tester defects while preserving the same tester origin. This is a new bounded WS3 recovery task; the expired receipt-only release exception is not general approval for this task.
+
+```text
+editor: @wbdevworld / WS3
+task: SALE-RECOVERY-01
+independent human reviewer: @Ben-001-sys (pending; AI review is evidence only)
+integration branch: ws3/sale-recovery-2026-10-03
+starting tested local equivalent: d2816447203f6ef76b6eb683643811da12afe92f
+starting deployed source: 0ce2db1be990a75fec500c410e980384fd05ec74
+parallel UI candidate to preserve: PR #136 / 14a56f0a8f985dd596d576712487a605f134d935
+allowed: src/app/attention-recovery.*, src/app/pos-app.tsx,
+  src/app/checkout-client*, src/app/operational-client*,
+  src/server/sales/prepare-sale.ts and focused recovery tests,
+  src/server/sales/supabase-checkout-store.ts and focused store tests,
+  src/core/checkout/in-memory-store.ts and focused store tests,
+  src/server/sales/confirm-cash.ts, src/server/payments/initialize-electronic.ts
+  and focused tests only to reject first new effects after reservation expiry,
+  src/local/checkout-attempt* only for safe original-attempt handoff,
+  focused app/e2e fixtures, staff recovery documentation, evidence, this ledger
+paths beginning src/ are relative to apps/pos-web
+canonical owners: Woo commerce; Supabase POS operations; IndexedDB journal/drafts
+contracts/migrations/dependencies: unchanged
+acceptance: explicit original-key existing-order repair only; no payment/receipt/
+  cash/finalize/cancel evidence; matching frozen quote/intent and real reservation;
+  no repair on GET; no new transaction/key; retained journal/drafts;
+  clear nonterminal/error feedback and current-context sign-in restoration
+forbidden: new payment/finalization/refund/stock engine, journal deletion,
+  quote expiry bypass for new sales, pricing changes, WS2 edits, peer UI edits,
+  protected main/integration merge, production, fabricated approval
+contributor sale_recovery_trace: isolated sale-recovery-feedback worktree;
+  src/app/attention-recovery.*, src/app/pos-app.tsx and client recovery helpers/tests
+contributor sale_recovery_safety: isolated sale-recovery-original worktree;
+  src/server/sales/prepare-sale.ts and focused server recovery tests;
+  bounded store expansion: insert-if-absent prepared seeding in the durable
+  and in-memory stores, preserving an existing sale/payment state under races
+contributor sale_recovery_expiry: isolated sale-recovery-expiry worktree;
+  effect-free expiry guards immediately before new payment effects; preserve
+  all existing payment/cash replay and reconciliation, no reservation renewal
+root: docs/ledger, imports, combined review/test/freshness and qualified handoff
+review: different human source approval or a new explicit task-specific owner
+  staging release exception is required before rollout; no blanket exception
+staff-documentation impact: YES
+```
+
+Source implementation is complete on the bounded recovery branch, preserving the pinned UI/receipt baseline. The [recovery evidence](docs/testing/sale-recovery-2026-10-03/README.md) records original command/attempt preservation, lost-response handoff, first-write-wins persistence, reservation/payment guards, contributor provenance and verification limits. No live sale repair or staging rollout has occurred. Contributor source leases are released after root import; root retains qualification/handoff only. Final remote head, exact-head CI and bounded freshness observations belong in the PR handoff. Different-human review or an explicit owner exception for this candidate remains pending.
+
 ## 5PM emergency senior expansion — ACTIVE until 2026-09-21 17:00 Africa/Accra
 
 Owner/user explicitly authorizes a bounded same-day expansion so production-MVP usability defects #82, #83 and #84 can be resolved in parallel before the 17:00 deadline. This is a temporary task-specific reassignment only and does **not** permanently alter `OWNERSHIP.md`.

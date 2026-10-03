@@ -25,6 +25,7 @@ export async function initializeElectronicPayment(input: {
   readonly methodConfigured?: boolean;
 }): Promise<ApiResult<PaymentState>> {
   const { store, provider, actor, request, context, appEnv } = input;
+  const requestStartedAt = Date.now();
   return store.withLock(`pay:${request.transactionId}`, async () => {
     const sale = await store.getSale(request.transactionId);
     if (!sale) {
@@ -113,6 +114,18 @@ export async function initializeElectronicPayment(input: {
     }
 
     await store.markIdempotencySent(actor.organizationId, "payment.initialize", context.idempotencyKey);
+
+    const expiresAt = Date.parse(sale.prepared.expiresAt);
+    const observedAt = input.now.getTime() + Math.max(0, Date.now() - requestStartedAt);
+    if (!Number.isFinite(expiresAt) || !Number.isFinite(observedAt) || expiresAt <= observedAt) {
+      await store.releaseIdempotency(actor.organizationId, "payment.initialize", context.idempotencyKey);
+      return apiFailure(
+        "REQUIRES_ATTENTION",
+        "the prepared sale reservation has expired or cannot be verified; check this sale before taking payment",
+        context.correlationId,
+        { field: "pre_effect" },
+      );
+    }
 
     const paymentId = crypto.randomUUID();
     const providerReference = providerReferenceFor(paymentId);

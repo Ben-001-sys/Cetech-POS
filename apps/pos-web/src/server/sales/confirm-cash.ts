@@ -25,6 +25,8 @@ export async function confirmCash(input: {
   readonly now: Date;
 }): Promise<ApiResult<PaymentState>> {
   const { store, actor, request, context, now } = input;
+  const requestStartedAt = Date.now();
+  const currentNow = () => new Date(now.getTime() + Math.max(0, Date.now() - requestStartedAt));
   return store.withLock(`cash:${request.transactionId}`, async () => {
     const sale = await store.getSale(request.transactionId);
     const existingPayment = sale ? await store.getPaymentForTransaction(request.transactionId) : undefined;
@@ -66,7 +68,7 @@ export async function confirmCash(input: {
 
     await store.markIdempotencySent(actor.organizationId, "payment.cash", context.idempotencyKey);
     try {
-      return await completeCash({ store, actor, request, context, now });
+      return await completeCash({ store, actor, request, context, now, currentNow });
     } catch {
       const attention = attentionPayment(request.transactionId);
       await store.enqueueOutbox({
@@ -95,6 +97,7 @@ async function completeCash(input: {
   readonly request: CashPaymentRequest;
   readonly context: CommandContext;
   readonly now: Date;
+  readonly currentNow: () => Date;
 }): Promise<ApiResult<PaymentState>> {
   const { store, actor, request, context, now } = input;
   const sale = await store.getSale(request.transactionId);
@@ -200,6 +203,21 @@ async function completeCash(input: {
     return apiFailure("VALIDATION_ERROR", "shift currency does not match the prepared sale", context.correlationId);
   }
 
+  const movements = await store.listCashSales(request.transactionId);
+  if (movements.length === 0) {
+    const expiresAt = Date.parse(sale.prepared.expiresAt);
+    const observedAt = input.currentNow().getTime();
+    if (!Number.isFinite(expiresAt) || !Number.isFinite(observedAt) || expiresAt <= observedAt) {
+      await store.releaseIdempotency(actor.organizationId, "payment.cash", context.idempotencyKey);
+      return apiFailure(
+        "REQUIRES_ATTENTION",
+        "the prepared sale reservation has expired or cannot be verified; check this sale before taking payment",
+        context.correlationId,
+        { field: "pre_effect" },
+      );
+    }
+  }
+
   const verifiedAt = toIsoTimestamp(now);
   const payment: StoredPayment = {
     paymentId: crypto.randomUUID(),
@@ -214,7 +232,6 @@ async function completeCash(input: {
     verificationSource: "cash_ledger",
     actorId: actor.actorId,
   };
-  const movements = await store.listCashSales(request.transactionId);
   if (movements.length === 0) {
     const movement: CashMovement = {
       id: crypto.randomUUID(),

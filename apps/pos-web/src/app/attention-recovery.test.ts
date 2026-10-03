@@ -5,6 +5,9 @@ import type { PaymentState, SaleResolution } from "../../../../docs/contracts/do
 import type { AttentionItemView } from "../ui/operational";
 import {
   checkoutBlockedByLocalRecovery,
+  attentionRecoveryFeedback,
+  boundedRecoveryFetch,
+  createAttentionAuthRefreshGate,
   createAttentionRecoveryLock,
   createRecoveryScanGate,
   hasBlockingLocalTransactionRecovery,
@@ -13,6 +16,7 @@ import {
   type LocalRecoveryContext,
   mergeAttentionItems,
   recoverAttentionItem,
+  recoveryRequiresSignIn,
   runAttentionRecovery,
 } from "./attention-recovery";
 import {
@@ -133,7 +137,130 @@ describe("server operation attention identity", () => {
   });
 });
 
+describe("automatic attention auth refresh", () => {
+  const context: LocalRecoveryContext = {
+    organizationId: "org_a", actorId: "cashier_a", registerId: "reg_a", deviceId: LOCAL_CHECKOUT_SCOPE.deviceId,
+  };
+  const auth: ApiResult<unknown> = { ok: false, correlationId: CORRELATION, error: {
+    code: "AUTH_REQUIRED", nextAction: "reauthenticate", retryable: false, message: "session required",
+  } };
+
+  test("persistent unauthorized inbox reads stop after one refresh even when refresh publishes a new valid session", async () => {
+    const gate = createAttentionAuthRefreshGate();
+    let session = { organizationId: context.organizationId, actorId: context.actorId };
+    const inbox = vi.fn(async () => auth);
+    const refresh = vi.fn(async () => {
+      session = { ...session };
+    });
+    async function loadAttention(): Promise<void> {
+      const result = await inbox();
+      const scanned = { ...context, ...session };
+      if (gate.shouldRefresh(scanned, result)) {
+        await refresh();
+        // The new ready session object triggers the app's next inbox effect.
+        await loadAttention();
+      }
+    }
+    const initialSession = session;
+    await loadAttention();
+    expect(session).not.toBe(initialSession);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(inbox).toHaveBeenCalledTimes(2);
+    await loadAttention();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(inbox).toHaveBeenCalledTimes(3);
+
+    gate.shouldRefresh({ ...context, ...session }, { ok: true, correlationId: CORRELATION, data: { items: [] } });
+    await loadAttention();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(inbox).toHaveBeenCalledTimes(5);
+  });
+
+  test("real recovery context changes and sign-in boundaries permit a new bounded refresh", () => {
+    const gate = createAttentionAuthRefreshGate();
+    for (const next of [
+      context,
+      { ...context, actorId: "cashier_b" },
+      { ...context, organizationId: "org_b" },
+      { ...context, registerId: "reg_b" },
+      { ...context, deviceId: "another-device" },
+    ]) {
+      expect(gate.shouldRefresh(next, auth)).toBe(true);
+      expect(gate.shouldRefresh({ ...next }, auth)).toBe(false);
+    }
+    gate.reset();
+    expect(gate.shouldRefresh({ ...context, deviceId: "another-device" }, auth)).toBe(true);
+    expect(gate.shouldRefresh({ ...context, deviceId: "another-device" }, auth)).toBe(false);
+  });
+
+  test("a spent automatic gate keeps explicit operator recovery sign-in available", async () => {
+    const gate = createAttentionAuthRefreshGate();
+    gate.shouldRefresh(context, auth);
+    const refresh = vi.fn(async () => undefined);
+    await runAttentionRecovery({
+      item: saleItem, lock: createAttentionRecoveryLock(),
+      ports: { payments: { resolve: vi.fn() }, sales: { resolve: async () => auth as ApiResult<SaleResolution> } },
+      reload: async () => undefined,
+      onOutcome: async (outcome) => { if (recoveryRequiresSignIn(outcome)) await refresh(); },
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(gate.shouldRefresh(context, auth)).toBe(false);
+  });
+});
+
 describe("UX-04 attention recovery identity", () => {
+  test("expired sale recovery preserves its auth result and prompts sign-in instead of reporting a resolution", async () => {
+    const auth: ApiResult<SaleResolution> = { ok: false, correlationId: CORRELATION, error: {
+      code: "AUTH_REQUIRED", nextAction: "reauthenticate", retryable: false, message: "internal session token diagnostics",
+    } };
+    const outcome = await recoverAttentionItem(saleItem, { payments: { resolve: vi.fn() }, sales: { resolve: vi.fn(async () => auth) } });
+    expect(outcome).toEqual({ status: "attempted", kind: "sale", result: auth });
+    expect(recoveryRequiresSignIn(outcome)).toBe(true);
+    expect(attentionRecoveryFeedback(outcome)).toContain("Your session ended. Sign in again.");
+    expect(attentionRecoveryFeedback(outcome)).toContain("saved transaction was kept");
+    expect(attentionRecoveryFeedback(outcome)).not.toContain("token diagnostics");
+  });
+
+  test("a failed local payment status lookup does not issue a dependent sale request", async () => {
+    const salesResolve = vi.fn();
+    const auth: ApiResult<PaymentState> = { ok: false, correlationId: CORRELATION, error: {
+      code: "AUTH_REQUIRED", nextAction: "reauthenticate", retryable: false, message: "session required",
+    } };
+    const outcome = await recoverAttentionItem({ ...paymentItem, id: "local-journal:payment-row" }, {
+      payments: { resolve: vi.fn(async () => auth) }, sales: { resolve: salesResolve },
+    });
+    expect(recoveryRequiresSignIn(outcome)).toBe(true);
+    expect(salesResolve).not.toHaveBeenCalled();
+  });
+
+  test("nonterminal sale feedback remains explicit without displaying backend text", async () => {
+    const outcome = await recoverAttentionItem(saleItem, { payments: { resolve: vi.fn() }, sales: { resolve: async () => ({
+      ok: true, correlationId: CORRELATION, data: { transactionId: TX, status: "requires_attention", message: "WooCommerce provider internal diagnostics" },
+    }) } });
+    expect(attentionRecoveryFeedback(outcome)).toContain("still needs checking");
+    expect(attentionRecoveryFeedback(outcome)).toContain("Do not take payment again");
+    expect(attentionRecoveryFeedback(outcome)).not.toContain("WooCommerce");
+  });
+
+  test("an unexpected port failure reports a safe failed outcome and always releases the lock", async () => {
+    const lock = createAttentionRecoveryLock();
+    const onOutcome = vi.fn();
+    const reload = vi.fn(async () => undefined);
+    await runAttentionRecovery({ item: saleItem, lock, ports: { payments: { resolve: vi.fn() }, sales: { resolve: async () => { throw new Error("unexpected provider failure"); } } }, reload, onOutcome });
+    expect(onOutcome).toHaveBeenCalledWith({ status: "failed" });
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(lock.inFlightId()).toBeNull();
+  });
+
+  test("a recovery deadline aborts one request without retrying it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, options) => new Promise<Response>((_resolve, reject) => {
+      options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+    await expect(boundedRecoveryFetch(fetchImpl, 5)("/api/pos/v1/sales/original")).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
   test("reload rediscovers an ambiguous prepare only from the durable journal and resolves before the gate opens", async () => {
     const name = uniqueDbName();
     const firstDb = openPosLocalDatabase(name);
@@ -352,7 +479,7 @@ describe("UX-04 attention recovery identity", () => {
       sales: { resolve: salesResolve },
     });
 
-    expect(outcome).toBe("attempted");
+    expect(outcome.status).toBe("attempted");
     expect(paymentResolve).toHaveBeenCalledWith({ transactionId: TX, paymentId: undefined });
     expect(salesResolve).toHaveBeenCalledWith(TX);
   });
@@ -380,7 +507,7 @@ describe("UX-04 attention recovery identity", () => {
     const payments = { initialize, resolve } as Pick<PaymentPort, "resolve"> & { initialize: typeof initialize };
     const sales = { resolve: salesResolve } as Pick<SalesPort, "resolve">;
     const outcome = await recoverAttentionItem(paymentItem, { payments, sales });
-    expect(outcome).toBe("attempted");
+    expect(outcome.status).toBe("attempted");
     expect(resolve).toHaveBeenCalledTimes(1);
     expect(resolve).toHaveBeenCalledWith({ transactionId: TX, paymentId: PAYMENT });
     expect(initialize).not.toHaveBeenCalled();
@@ -406,7 +533,7 @@ describe("UX-04 attention recovery identity", () => {
       payments: { resolve: paymentResolve },
       sales: { resolve: salesResolve },
     });
-    expect(outcome).toBe("unsupported");
+    expect(outcome.status).toBe("unsupported");
     expect(paymentResolve).not.toHaveBeenCalled();
     expect(salesResolve).not.toHaveBeenCalled();
   });
