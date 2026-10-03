@@ -35,13 +35,13 @@ async function installReceiptManagement(page: Page, canManage = true) {
     await route.fulfill({ contentType: "application/json", body: data({ locationId: "loc_a1", locationName: "Accra Shop", settings, persisted: saves.length > 0, canManage }) });
   });
   await page.addInitScript(() => {
-    const state = { calls: 0, text: "", size: "", imageReady: false };
+    const state = { calls: 0, text: "", widthPx: 0, imageReady: false };
     Object.assign(window, { receiptPrintTest: state });
     window.print = () => {
       state.calls += 1;
       const paper = document.querySelector<HTMLElement>(".receipt-print-host .receipt-paper");
       state.text = paper?.innerText ?? "";
-      state.size = document.querySelector("[data-receipt-print-sizing]")?.textContent ?? "";
+      state.widthPx = paper?.getBoundingClientRect().width ?? 0;
       const image = paper?.querySelector("img");
       state.imageReady = !image || (image.complete && image.naturalWidth > 0);
       window.setTimeout(() => window.dispatchEvent(new Event("afterprint")), 25);
@@ -79,11 +79,11 @@ test("unsaved branding preview, logo, save/reload and marked sample print use th
   await page.getByRole("combobox", { name: /^Printer paper width on this device/ }).selectOption("58");
   await page.getByRole("button", { name: "Test print (sample)", exact: true }).click();
   await expect(page.getByText("Sample print dialog opened. No sale was created.", { exact: true })).toBeVisible();
-  const printed = await page.evaluate(() => (window as unknown as { receiptPrintTest: { calls: number; text: string; size: string; imageReady: boolean } }).receiptPrintTest);
+  const printed = await page.evaluate(() => (window as unknown as { receiptPrintTest: { calls: number; text: string; widthPx: number; imageReady: boolean } }).receiptPrintTest);
   expect(printed.calls).toBe(1);
   expect(printed.text).toContain("CETECH Ghana");
   expect(printed.text).toMatch(/sample/i);
-  expect(printed.size).toContain("size: 58mm");
+  expect(Math.abs(printed.widthPx - 54 * 96 / 25.4)).toBeLessThan(1);
   expect(printed.imageReady).toBe(true);
   expect(harness.commerce).toEqual([]);
 });

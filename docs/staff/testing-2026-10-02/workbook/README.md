@@ -875,8 +875,10 @@ Record the retry part as **COULD NOT TEST** if no failed check or retry button i
 **Expected:**
 - browser print preview shows the actual receipt;
 - preview is not blank;
-- preview is an 80mm-wide page, not A4 or Letter and not the full POS screen;
-- the printer itself must be set to an 80mm roll. The page does not grow with the receipt.
+- preview keeps the printer's selected paper size and shows only the receipt;
+- for thermal printing, match the printer's paper width to the 80 mm or 58 mm device choice;
+- the receipt starts near the top with a small margin and keeps its text size; blank space on a longer sheet is below the receipt, not above and below it;
+- longer receipts continue onto later pages without a blank first page or clipped rows.
 
 ### Your result
 
@@ -1397,7 +1399,7 @@ Test selling, modal dialogs, Orders, Returns, Register, and Management where aut
 
 ## T144 — Printer
 
-**Expected:** receipt appears in print preview as an 80mm-wide page, not A4 or Letter, and prints when the printer is set to an 80mm roll.
+**Expected:** print preview keeps the selected printer paper size, with the receipt near the top and the same text size. For thermal printing, match the printer's 80 mm or 58 mm paper width to this device's setting. Check the physical print separately.
 
 ### Your result
 

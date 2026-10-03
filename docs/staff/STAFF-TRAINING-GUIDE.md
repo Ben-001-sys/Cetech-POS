@@ -346,6 +346,8 @@ Select **Print receipt**.
 
 The browser print preview should show the receipt itself, not a blank page and not the entire POS interface.
 
+Keep the printer's selected paper size. The receipt should start near the top with a small margin, using the same text size. A short receipt may leave unused paper below it; it should not be centered vertically. For thermal printing, match the printer's paper width to the 80 mm or 58 mm choice on this device.
+
 If printing fails:
 
 - do not repeat the sale;

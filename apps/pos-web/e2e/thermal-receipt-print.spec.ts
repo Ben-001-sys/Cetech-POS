@@ -11,7 +11,11 @@ import type { ReceiptViewModel } from "../src/features/sell/state/checkoutSessio
 const THERMAL_WIDTH_PT = (80 / 25.4) * 72;
 const A4_WIDTH_PT = (210 / 25.4) * 72;
 const LETTER_WIDTH_PT = 612;
-const css = readFileSync(path.join(process.cwd(), "src/features/sell/sell.css"), "utf8");
+// Match production global stylesheet order, including rules after sell.css.
+const layoutSource = readFileSync(path.join(process.cwd(), "src/app/layout.tsx"), "utf8");
+const cssPaths = [...layoutSource.matchAll(/import "@\/(.*\.css)"/g)].map((match) => match[1]!);
+cssPaths.push("app/globals.css");
+const css = cssPaths.map((file) => readFileSync(path.join(process.cwd(), "src", file), "utf8")).join("\n");
 const printerModule = ts.transpileModule(
   readFileSync(path.join(process.cwd(), "src/core/receipt/printer-preference.ts"), "utf8"),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } },
@@ -32,7 +36,7 @@ function renderSyntheticReceipt(receipt: ReceiptViewModel): string {
     const { createElement } = require('react');
     const { renderToStaticMarkup } = require('react-dom/server');
     const { ReceiptPaper } = require('./src/features/sell/components/ReceiptPaper.tsx');
-    process.stdout.write(renderToStaticMarkup(createElement(ReceiptPaper, { receipt: JSON.parse(fs.readFileSync(0, 'utf8')), sample: true })));
+    process.stdout.write(renderToStaticMarkup(createElement(ReceiptPaper, { receipt: JSON.parse(fs.readFileSync(0, 'utf8')) })));
   `], { input: JSON.stringify(receipt), encoding: "utf8" });
 }
 
@@ -46,76 +50,91 @@ function syntheticReceipt(lineCount: number): ReceiptViewModel {
   };
 }
 
-for (const scenario of [{ width: 80, lines: 1 }, { width: 58, lines: 1 }, { width: 58, lines: 40 }] as const) {
-  test(`measured ${scenario.width}mm ${scenario.lines === 1 ? "short" : "long"} receipt prints intact and in black`, async ({ page }) => {
-    const markup = renderSyntheticReceipt(syntheticReceipt(scenario.lines));
-    const server = createServer((req, res) => {
-      if (req.url === "/printer.js") {
-        res.writeHead(200, { "content-type": "text/javascript" });
-        res.end(printerModule);
-      } else {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(`<!doctype html><html><head><style>${css}</style></head><body><nav>POS shell must not print</nav><div class="receipt-print-host">${markup}</div></body></html>`);
+for (const scenario of [{ width: 80, lines: 1 }, { width: 80, lines: 40 }, { width: 58, lines: 1 }, { width: 58, lines: 40 }] as const) {
+  for (const preferCSSPageSize of [true, false]) {
+    test(`${scenario.width}×297mm ${scenario.lines === 1 ? "short" : "long"} receipt starts at the top, CSS page preference ${preferCSSPageSize}`, async ({ page }) => {
+      const markup = renderSyntheticReceipt(syntheticReceipt(scenario.lines));
+      const server = createServer((req, res) => {
+        if (req.url === "/printer.js") {
+          res.writeHead(200, { "content-type": "text/javascript" });
+          res.end(printerModule);
+        } else {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(`<!doctype html><html><head><style>${css}</style></head><body>
+            <div class="app-shell"><nav class="sidebar">POS shell must not print</nav><div class="app-main"><header class="topbar">Toolbar</header><main class="content">
+              <div class="${scenario.width === 80 ? "sell-workspace" : "orders-workspace"}"><section class="workspace-surface">POS workspace must not print</section><div class="receipt-print-host">${markup}</div></div>
+            </main></div></div>
+          </body></html>`);
+        }
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("receipt test server did not bind");
+      try {
+        await page.goto(`http://127.0.0.1:${address.port}/receipt`);
+        await page.evaluate(async (width) => {
+          const modulePath = "/printer.js";
+          const { prepareReceiptPrint } = await import(modulePath);
+          await prepareReceiptPrint(document, width);
+        }, scenario.width);
+        await page.emulateMedia({ media: "print" });
+        const layout = await page.evaluate(() => {
+          const paper = document.querySelector<HTMLElement>(".receipt-paper")!;
+          const box = paper.getBoundingClientRect();
+          const clipped = [...paper.querySelectorAll("th, td, .r-row")].some((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.right > box.right + 1 || bounds.left < box.left - 1 || element.scrollWidth > element.clientWidth + 1;
+          });
+          return {
+            width: box.width, height: box.height, clipped,
+            headingTop: paper.querySelector("h3")!.getBoundingClientRect().top,
+            textSize: getComputedStyle(paper).fontSize,
+            text: paper.innerText,
+            cells: paper.querySelectorAll("tbody tr").length,
+            black: [...paper.querySelectorAll("td, th, strong, h3")].every((element) => getComputedStyle(element).color === "rgb(0, 0, 0)"),
+            logo: { ready: paper.querySelector<HTMLImageElement>("img")!.naturalWidth > 0, filter: getComputedStyle(paper.querySelector("img")!).filter },
+            shell: getComputedStyle(document.querySelector("nav")!).display,
+            sizing: document.querySelector<HTMLStyleElement>("[data-receipt-print-sizing]")!.textContent,
+          };
+        });
+        expect(Math.abs(layout.width - (scenario.width - 4) * 96 / 25.4)).toBeLessThan(1);
+        expect(layout.clipped).toBe(false);
+        expect(layout.headingTop).toBeLessThan(45);
+        expect(layout.textSize).toBe("12px");
+        expect(layout.black).toBe(true);
+        expect(layout.logo.ready).toBe(true);
+        expect(layout.logo.filter).toBe("grayscale(1)");
+        expect(layout.shell).toBe("none");
+        expect(layout.cells).toBe(scenario.lines);
+        expect(layout.text).toContain("LONG-SAMPLE-SKU-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+        expect(layout.text).toContain("Colour: Magnolia — Size: 10L");
+        expect(layout.text).toContain("CETECH Ghana");
+        expect(layout.text).toContain("Thank You For Purchasing");
+        expect(layout.sizing).toContain("@page { size: auto; margin: 2mm; }");
+        const pdf = await page.pdf({ width: `${scenario.width}mm`, height: "297mm", preferCSSPageSize, scale: 1, printBackground: false });
+        const boxes = [...pdf.toString("latin1").matchAll(/\/MediaBox\s*\[\s*([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*\]/g)];
+        expect(boxes.length).toBeGreaterThan(0);
+        for (const box of boxes) {
+          expect(Math.abs(Number(box[3]) - scenario.width * 72 / 25.4)).toBeLessThan(3);
+          expect(Math.abs(Number(box[4]) - 297 * 72 / 25.4)).toBeLessThan(3);
+        }
+        if (scenario.lines === 1) {
+          expect(boxes).toHaveLength(1);
+        } else {
+          expect(boxes.length).toBeGreaterThan(1);
+        }
+        const heading = firstPageHeadingGeometry(pdf, Number(boxes[0]?.[4]));
+        expect(heading.topPt).toBeGreaterThan(0);
+        expect(heading.topPt).toBeLessThan(35);
+        // The 16px business heading must retain its 12pt physical output size.
+        expect(heading.fontSizePt).toBeCloseTo(12, 2);
+        expect(inflatedPdfStreams(pdf)).toMatch(/Tj|TJ/);
+      } finally {
+        server.close();
       }
     });
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("receipt test server did not bind");
-    try {
-      await page.goto(`http://127.0.0.1:${address.port}/receipt`);
-      await page.evaluate(async (width) => {
-        const modulePath = "/printer.js";
-        const { prepareReceiptPrint } = await import(modulePath);
-        await prepareReceiptPrint(document, width);
-      }, scenario.width);
-      await page.emulateMedia({ media: "print" });
-      const layout = await page.evaluate(() => {
-        const paper = document.querySelector<HTMLElement>(".receipt-paper")!;
-        const box = paper.getBoundingClientRect();
-        const clipped = [...paper.querySelectorAll("th, td, .r-row")].some((element) => {
-          const bounds = element.getBoundingClientRect();
-          return bounds.right > box.right + 1 || bounds.left < box.left - 1 || element.scrollWidth > element.clientWidth + 1;
-        });
-        return {
-          width: box.width, height: box.height, clipped,
-          text: paper.innerText,
-          cells: paper.querySelectorAll("tbody tr").length,
-          black: [...paper.querySelectorAll("td, th, strong, h3")].every((element) => getComputedStyle(element).color === "rgb(0, 0, 0)"),
-          logo: { ready: paper.querySelector<HTMLImageElement>("img")!.naturalWidth > 0, filter: getComputedStyle(paper.querySelector("img")!).filter },
-          shell: getComputedStyle(document.querySelector("nav")!).display,
-          sizing: document.querySelector<HTMLStyleElement>("[data-receipt-print-sizing]")!.textContent,
-        };
-      });
-      expect(Math.abs(layout.width - (scenario.width - 4) * 96 / 25.4)).toBeLessThan(1);
-      expect(layout.clipped).toBe(false);
-      expect(layout.black).toBe(true);
-      expect(layout.logo.ready).toBe(true);
-      expect(layout.logo.filter).toBe("grayscale(1)");
-      expect(layout.shell).toBe("none");
-      expect(layout.cells).toBe(scenario.lines);
-      expect(layout.text).toContain("LONG-SAMPLE-SKU-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-      expect(layout.text).toContain("Colour: Magnolia — Size: 10L");
-      expect(layout.text).toContain("Sample — not a sale");
-      expect(layout.text).toContain("Thank You For Purchasing");
-      const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: false });
-      const boxes = [...pdf.toString("latin1").matchAll(/\/MediaBox\s*\[\s*([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*\]/g)];
-      expect(boxes.length).toBeGreaterThan(0);
-      for (const box of boxes) expect(Math.abs(Number(box[3]) - scenario.width * 72 / 25.4)).toBeLessThan(3);
-      if (scenario.lines === 1) {
-        expect(boxes).toHaveLength(1);
-        expect(Number(boxes[0]?.[4])).toBeLessThan(layout.height * 72 / 96 + 25);
-        expect(Number(boxes[0]?.[4])).toBeGreaterThan(layout.height * 72 / 96);
-        expect(layout.sizing).not.toContain(`${scenario.width}mm 297mm`);
-      } else {
-        expect(boxes.length).toBeGreaterThan(1);
-        expect(layout.sizing).toContain("58mm 297mm");
-      }
-      expect(inflatedPdfStreams(pdf)).toMatch(/Tj|TJ/);
-    } finally {
-      server.close();
-    }
-  });
+  }
 }
 
 test("Chromium keeps the 80mm page box and emits a thermal-width PDF", async ({ page }) => {
@@ -183,4 +202,48 @@ function inflatedPdfStreams(pdf: Buffer): string {
     }
   }
   return parts.join("\n");
+}
+
+/** Chromium fixture geometry, not a general PDF parser. Check the first page's
+ * actual text coordinates: DOM y=0 also occurred in the centered-paper defect.
+ * Reading that page's own content rejects a blank leading page as well.
+ */
+function firstPageHeadingGeometry(pdf: Buffer, pageHeight: number): { topPt: number; fontSizePt: number } {
+  const objects = [...pdf.toString("latin1").matchAll(/\b(\d+)\s+0\s+obj\b([\s\S]*?)\bendobj\b/g)];
+  const firstPage = objects.find((object) => /\/Type\s*\/Page\b/.test(object[2] ?? ""));
+  const contentId = firstPage?.[2]?.match(/\/Contents\s+(\d+)\s+0\s+R/)?.[1];
+  const content = objects.find((object) => object[1] === contentId)?.[2];
+  const bytes = content?.match(/stream\r?\n([\s\S]*?)\nendstream/)?.[1];
+  if (!bytes) throw new Error("First receipt page has no content stream");
+  const stream = inflateSync(Buffer.from(bytes, "latin1")).toString("latin1");
+  type Matrix = [number, number, number, number, number, number];
+  const identity: Matrix = [1, 0, 0, 1, 0, 0];
+  let transform: Matrix = [...identity];
+  let textMatrix: Matrix | undefined;
+  let fontSize: number | undefined;
+  const stack: Matrix[] = [];
+  const number = "[-+]?(?:\\d*\\.\\d+|\\d+\\.?\\d*)";
+  const operators = new RegExp(`${Array.from({ length: 6 }, () => `(${number})`).join("\\s+")}\\s+(cm|Tm)\\b|\\b(q|Q|BT|Tj|TJ)\\b|(${number})\\s+Tf\\b`, "g");
+  for (const match of stream.matchAll(operators)) {
+    if (match[7] === "cm" || match[7] === "Tm") {
+      const matrix = match.slice(1, 7).map(Number) as Matrix;
+      if (match[7] === "Tm") textMatrix = matrix;
+      else {
+        const p = transform;
+        const l = matrix;
+        transform = [p[0] * l[0] + p[2] * l[1], p[1] * l[0] + p[3] * l[1], p[0] * l[2] + p[2] * l[3], p[1] * l[2] + p[3] * l[3], p[0] * l[4] + p[2] * l[5] + p[4], p[1] * l[4] + p[3] * l[5] + p[5]];
+      }
+    } else if (match[8] === "q") stack.push([...transform]);
+    else if (match[8] === "Q") transform = stack.pop() ?? [...identity];
+    else if (match[8] === "BT") textMatrix = undefined;
+    else if (match[9]) fontSize = Number(match[9]);
+    else if (match[8] === "Tj" || match[8] === "TJ") {
+      if (!textMatrix || !fontSize) throw new Error("Receipt heading geometry is unavailable");
+      return {
+        topPt: pageHeight - (transform[1] * textMatrix[4] + transform[3] * textMatrix[5] + transform[5]),
+        fontSizePt: fontSize * Math.hypot(transform[2], transform[3]),
+      };
+    }
+  }
+  throw new Error("First receipt page has no printed heading");
 }

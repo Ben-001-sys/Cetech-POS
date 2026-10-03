@@ -44,21 +44,23 @@ describe("local receipt printer preference", () => {
     expect(writeReceiptPaperWidth(58)).toBe(false);
   });
 
-  test("sizes a short receipt to its content and releases temporary print CSS", async () => {
+  test("preserves selected printer paper for a short receipt and releases temporary print CSS", async () => {
     const { document, style } = fakePrintDocument(150);
     const cleanup = await prepareReceiptPrint(document, 58);
-    expect(style.textContent).toContain("size: 58mm 45mm");
+    expect(style.textContent).toContain("@page { size: auto; margin: 2mm; }");
+    expect(style.textContent).not.toMatch(/size:\s*\d+mm/);
     expect(style.textContent).toContain("width: 54mm !important");
     expect(style.remove).not.toHaveBeenCalled();
     cleanup();
     expect(style.remove).toHaveBeenCalledOnce();
   });
 
-  test("allows long receipts to paginate at a valid maximum page height", async () => {
+  test("leaves long receipt pagination and page height to the selected printer paper", async () => {
     const { document, style } = fakePrintDocument(2600);
     const cleanup = await prepareReceiptPrint(document, 80);
-    expect(style.textContent).toContain("size: 80mm 297mm");
-    expect(style.textContent).not.toContain("auto;");
+    expect(style.textContent).toContain("@page { size: auto; margin: 2mm; }");
+    expect(style.textContent).not.toMatch(/size:\s*\d+mm/);
+    expect(style.textContent).toContain("width: 76mm !important");
     cleanup();
   });
 

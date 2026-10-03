@@ -65,8 +65,9 @@ async function readyImage(image: HTMLImageElement): Promise<void> {
 
 /**
  * Prepare the already mounted receipt only. Return cleanup after the print dialog
- * closes. A valid, measured @page height avoids an A4-length blank receipt tail;
- * longer receipts paginate at 297mm. Printer drivers may override CSS page size.
+ * closes. Keep the printer's selected page size: a shorter custom CSS page can
+ * be centered inside a longer driver sheet by Chromium. Only receipt width and
+ * margins are supplied here; the printer owns page height and pagination.
  */
 export async function prepareReceiptPrint(
   document: Document,
@@ -97,8 +98,7 @@ export async function prepareReceiptPrint(
     ]);
     const contentHeight = Math.max(paper.scrollHeight, paper.getBoundingClientRect().height);
     if (!Number.isFinite(contentHeight) || contentHeight <= 0) throw new Error("Receipt is not ready to print. Open it and try again.");
-    const pageHeight = Math.min(297, Math.max(32, Math.ceil(contentHeight * 25.4 / 96) + 5));
-    style.textContent = `${dimensions}\n${measurement}\n@media print { @page { size: ${width}mm ${pageHeight}mm; margin: 2mm; } html, body { width: ${contentWidth}mm !important; } }`;
+    style.textContent = `${dimensions}\n${measurement}\n@media print { @page { size: auto; margin: 2mm; } html, body { width: ${contentWidth}mm !important; } }`;
     return cleanup;
   } catch (error) {
     cleanup();

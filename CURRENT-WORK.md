@@ -770,4 +770,49 @@ review:
 
 Receipt presentation settings remain location-scoped; paper width is a separate local printer preference. Snapshot content freezes presentation at completion and reads without live settings on reprint. Parallel contributors use isolated worktrees with non-overlapping scopes; the senior controls canonical schema generation and integration.
 
-Receipt source implementation and local combined verification are complete. Final remote candidate/CI/freshness and rollout state are recorded in the receipt PR handoff. Independent reviewer: @Ben-001-sys (approval pending). The staging alias remains on the previously approved pricing build until exact-head CI/review, additive staging migration, immutable Preview smoke and alias reassignment pass. All contributor worktree leases for this task are released after import.
+Receipt source implementation and local combined verification are complete. Final remote candidate/CI/freshness and rollout state are recorded in PR #134. Independent reviewer: @Ben-001-sys (approval pending). The owner subsequently authorized a one-time staging exception, and candidate `37bcc76ac33e3c9eb8bded2c49cb2f319223ae89` plus the additive receipt migration were deployed to the existing tester alias. Normal independent review remains pending; no merge or production promotion occurred. All contributor worktree leases for that task are released after import.
+
+## RECEIPT-TOP-01 — preserve selected paper and start printing at the top
+
+Current owner instruction, 2026-10-03: “my same size but it should be at the top.” This is a bounded correction to the receipt release, retaining the existing tester URL and paper/text size. The previous exact receipt source `37bcc76ac33e3c9eb8bded2c49cb2f319223ae89` is already on staging under the recorded owner exception; PR #134 remains open for Ben. No independent approval is implied by deployment.
+
+```text
+human / integrating editor: @wbdevworld, WS3
+task: RECEIPT-TOP-01
+integration branch: ws3/receipt-print-top-2026-10-03
+base source: 37bcc76ac33e3c9eb8bded2c49cb2f319223ae89
+base tree: cada5de37e7dc4c4b0adffa5fa708fb656d51694
+synthetic local equivalent: 23ad0f847dc40e7f6a80b58a33053c3ecef257b1
+declared integration baseline: integration/r9-staff-remediation-final, 1021cd113c783e25030fe9c0bda1be9ddcf5888c
+start main: c49045dd02c46574af5d341cc65c177116fa7306
+allowed implementation:
+  apps/pos-web/src/core/receipt/printer-preference.ts and its tests
+  apps/pos-web/e2e/thermal-receipt-print.spec.ts
+  apps/pos-web/e2e/receipt-settings.spec.ts sample print width assertion only
+  apps/pos-web/src/features/sell/sell.css print documentation only
+allowed integration/docs:
+  CURRENT-WORK.md, ADR-018 printing clarification
+  affected canonical staff guide/workbook and their maintained mirrors
+contributor: receipt_render, isolated local/receipt-print-top worktree
+contributor lease: printer helper + unit/e2e tests + print CSS comment only
+root lease: docs, import, review, verification and staging handoff
+contracts / schema / migrations / dependencies: unchanged
+acceptance:
+  selected 80/58 mm printer paper is preserved
+  same receipt text scale starts near the top, with small margins
+  fixed-sheet Chromium PDFs cover CSS-preferred and driver-preferred modes
+  long receipts paginate, no clipping/blank leading page, print lifecycle preserved
+  sample printing has no commerce effects; exact source CI green
+forbidden:
+  payment, pricing, stock, refunds, PWA recovery or historical snapshot rewrites
+  protected main, frozen PR #133, unrelated peer branches, production
+release:
+  owner explicitly instructed “deploy the fixes using the bypass” on 2026-10-03
+  one-time staging release exception for this exact tested positioning correction
+  no fabricated independent review, merge, protection/workflow changes
+  normal independent review remains pending with Ben; no blanket future exception
+expiry: this receipt positioning correction's tested staging handoff
+staff-documentation impact: YES, top alignment and selected printer paper behavior
+```
+
+The receipt_render contributor produced local source `e595619e4bd6cf1609ad8e768397d0e1bbbbf5bd` from the pinned equivalent receipt baseline. Its four allowed files were imported without other contributor changes. The contributor lease is released; the root is now the sole integration editor. Local source review found no new runtime blocker. Focused verification passed: 16 unit tests, 9 Chromium tests, focused lint and TypeScript. A negative control using the old helper failed the actual PDF heading-position assertion (~197 pt down), demonstrating that the new tests detect the reported defect rather than only checking DOM position or CSS spelling. Exact remote combined SHA, CI, final freshness and rollout evidence belong in the PR handoff. Physical printer/Safari output remains unverified.

@@ -1207,7 +1207,8 @@ button.product-card:disabled {
    * is not valid CSS Paged Media, and browsers discard that declaration.
    * 2mm page margins leave a 76mm printable content width. The printer
    * driver must match the device paper preference. prepareReceiptPrint overrides
-   * this valid fallback with 58/80mm and the measured content height.
+   * this fallback with size: auto, preserving the selected printer paper size
+   * and starting the receipt at its top margin rather than centering a short page.
    */
   @page {
     size: 80mm 297mm;
