@@ -1,0 +1,29 @@
+services:
+  pos-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?Set public Supabase URL in Dokploy}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Set browser-safe Supabase anon key in Dokploy}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_ENV: staging
+      APP_ORIGIN: ${APP_ORIGIN:?Set final HTTPS POS URL in Dokploy}
+      BUILD_ID: ${BUILD_ID:-7f0c897d068c90e44e6f183c218f934ccdbb7cf4}
+      SUPABASE_URL: ${SUPABASE_URL:?Set Supabase project URL in Dokploy}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Set Supabase publishable key in Dokploy}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set server-only Supabase service key in Dokploy}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?Set public Supabase URL in Dokploy}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Set browser-safe Supabase anon key in Dokploy}
+      BRIDGE_BASE_URL: ${BRIDGE_BASE_URL:?Set training WordPress bridge URL in Dokploy}
+      BRIDGE_USERNAME: ${BRIDGE_USERNAME:?Set dedicated bridge user in Dokploy}
+      BRIDGE_APPLICATION_PASSWORD: ${BRIDGE_APPLICATION_PASSWORD:?Set bridge app password in Dokploy}
+      PAYMENT_PROVIDER: disabled
+      PAYSTACK_MODE: test
+      PAYSTACK_MOBILE_MONEY_ENABLED: "false"
+      PAYSTACK_CARD_ENABLED: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+    expose:
+      - "3000"

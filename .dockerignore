@@ -1,0 +1,14 @@
+.git
+.github
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+**/coverage
+**/playwright-report
+**/test-results
+**/*.log
+**/.DS_Store
+**/.supabase
+**/supabase/.temp
+**/__pycache__
